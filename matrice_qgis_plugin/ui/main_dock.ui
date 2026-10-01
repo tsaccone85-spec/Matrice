@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainDockBase</class>
+ <widget class="QWidget" name="MainDockBase">
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <layout class="QHBoxLayout" name="cantiereLayout">
+     <item>
+      <widget class="QLabel" name="cantiereLabel">
+       <property name="text">
+        <string>Cantiere</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="cantiereCombo"/>
+     </item>
+     <item>
+      <widget class="QPushButton" name="apriTavolaButton">
+       <property name="text">
+        <string>Apri tavola di scavo</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="errorLabel">
+     <property name="styleSheet">
+      <string>color: #b3261e;</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="fasiLabel">
+     <property name="text">
+      <string>Fasi del cantiere</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QListWidget" name="fasiListWidget"/>
+   </item>
+   <item>
+    <widget class="QLabel" name="usAttiveLabel">
+     <property name="text">
+      <string>US attive (usate nel rilievo 1:20)</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QListWidget" name="usAttiveListWidget">
+     <property name="selectionMode">
+      <enum>QAbstractItemView::NoSelection</enum>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="quickViewLayout">
+     <item>
+      <widget class="QLabel" name="quickViewLabel">
+       <property name="text">
+        <string>Vista rapida</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="quickViewCombo"/>
+     </item>
+     <item>
+      <widget class="QPushButton" name="applyQuickViewButton">
+       <property name="text">
+        <string>Applica</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QPushButton" name="importaGpsButton">
+     <property name="text">
+      <string>Importa rilievo GPS...</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="logoutButton">
+     <property name="text">
+      <string>Esci</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+</ui>

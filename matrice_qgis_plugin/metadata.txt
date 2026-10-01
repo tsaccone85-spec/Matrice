@@ -1,0 +1,19 @@
+[general]
+name=Matrice - Rilievo di Scavo
+qgisMinimumVersion=3.28
+description=Apertura, editing e sincronizzazione del rilievo vettoriale di scavo con Matrice (US, fasi, geometrie, quote, reperti, sepolture).
+version=0.1.0 (MVP)
+author=Schede Digitali
+email=t.saccone85@gmail.com
+
+about=Plugin per l'integrazione tra QGIS e Matrice: consente di aprire le tavole di scavo salvate, correggere le geometrie (es. sostituzione coordinate da GPS differenziale), associare punti/linee/geometrie alle Unita' Stratigrafiche gia' archiviate, e sincronizzare automaticamente ogni modifica verso il database. Nessun file locale intermedio: Matrice e' l'unica fonte di verita' del dato.
+
+tracker=
+repository=
+tags=archeologia,scavo,stratigrafia,matrice,US,fasi
+homepage=
+category=Plugins
+icon=resources/icons/matrice.png
+experimental=True
+deprecated=False
+server=False

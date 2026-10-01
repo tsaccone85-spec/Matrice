@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ConnectionSettingsDialogBase</class>
+ <widget class="QDialog" name="ConnectionSettingsDialogBase">
+  <property name="windowTitle">
+   <string>Impostazioni connessione a Matrice</string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QLabel" name="infoLabel">
+     <property name="text">
+      <string>Questi dati si impostano una sola volta per postazione. Se non si sa cosa inserire, chiedere a chi gestisce Matrice in azienda.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="supabaseGroupBox">
+     <property name="title">
+      <string>Accesso a Matrice (login)</string>
+     </property>
+     <layout class="QFormLayout" name="supabaseFormLayout">
+      <item row="0" column="0" colspan="2">
+       <widget class="QLabel" name="supabaseInfoLabel">
+        <property name="text">
+         <string>L'indirizzo a cui il plugin si collega per il login e per leggere i dati e' gia' preimpostato: nella maggior parte dei casi non c'e' nulla da fare in questa sezione.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0" colspan="2">
+       <widget class="QCheckBox" name="supabaseAdvancedCheckBox">
+        <property name="text">
+         <string>Usare un indirizzo diverso da quello predefinito (solo ambienti di prova)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="supabaseUrlLabel">
+        <property name="text">
+         <string>Indirizzo Matrice</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="supabaseUrlEdit">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="supabaseAnonKeyLabel">
+        <property name="text">
+         <string>Chiave pubblica</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLineEdit" name="supabaseAnonKeyEdit">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="dbGroupBox">
+     <property name="title">
+      <string>Connessione dati mappa (credenziali tecniche, non personali)</string>
+     </property>
+     <layout class="QFormLayout" name="dbFormLayout">
+      <item row="0" column="0" colspan="2">
+       <widget class="QLabel" name="dbInfoLabel">
+        <property name="text">
+         <string>Servono solo per far vedere i rilievi su mappa in QGIS: non sono il tuo nome utente e la tua password personali di Matrice (quelli si inseriscono al momento dell'accesso).</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="hostLabel">
+        <property name="text">
+         <string>Indirizzo del server</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="hostEdit">
+        <property name="placeholderText">
+         <string>es. db.matrice.info</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="portLabel">
+        <property name="text">
+         <string>Porta</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="portEdit">
+        <property name="placeholderText">
+         <string>5432</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="dbnameLabel">
+        <property name="text">
+         <string>Nome database</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLineEdit" name="dbnameEdit">
+        <property name="placeholderText">
+         <string>matrice</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="dbUserLabel">
+        <property name="text">
+         <string>Utente tecnico database</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QLineEdit" name="dbUserEdit"/>
+      </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="dbPasswordLabel">
+        <property name="text">
+         <string>Password utente tecnico</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QLineEdit" name="dbPasswordEdit">
+        <property name="echoMode">
+         <enum>QLineEdit::Password</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="0">
+       <widget class="QLabel" name="sslmodeLabel">
+        <property name="text">
+         <string>Connessione protetta (SSL)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="1">
+       <widget class="QComboBox" name="sslmodeCombo">
+        <item>
+         <property name="text">
+          <string>require</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>prefer</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>verify-ca</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>verify-full</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>disable</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="7" column="0" colspan="2">
+       <widget class="QPushButton" name="testButton">
+        <property name="text">
+         <string>Testa connessione</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="statusLabel">
+     <property name="styleSheet">
+      <string>color: #b3261e;</string>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Save</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+</ui>

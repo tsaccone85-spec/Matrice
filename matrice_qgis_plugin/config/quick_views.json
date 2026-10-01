@@ -1,0 +1,28 @@
+{
+  "viste_rapide": {
+    "per_fasi": {
+      "etichetta": "Vista per fasi",
+      "layer": "rilievo_geometria",
+      "filtro_sql": "",
+      "campo_simbologia": "fase",
+      "stile_qml": null,
+      "campo_etichetta": null
+    },
+    "solo_sepolture": {
+      "etichetta": "Vedi solo le sepolture",
+      "layer": "rilievo_geometria",
+      "filtro_sql": "sepoltura_id IS NOT NULL",
+      "campo_simbologia": null,
+      "stile_qml": "Sepolture.qml",
+      "campo_etichetta": "numero_tomba"
+    },
+    "solo_usm": {
+      "etichetta": "Vedi solo le USM",
+      "layer": "rilievo_geometria",
+      "filtro_sql": "definizione = 'USM'",
+      "campo_simbologia": null,
+      "stile_qml": "USM.qml",
+      "campo_etichetta": null
+    }
+  }
+}

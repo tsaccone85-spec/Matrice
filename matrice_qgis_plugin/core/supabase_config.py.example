@@ -1,0 +1,22 @@
+"""
+Parametri del progetto Supabase di Matrice (sezione 1/2 della specifica).
+
+Questo e' un file di esempio: copialo in `supabase_config.py` (stessa
+cartella) e inserisci i valori reali del progetto Supabase di Matrice
+(URL e chiave "anon/publishable"), oppure lascia i placeholder e
+configura URL/chiave da ui/connection_settings_dialog.py a runtime.
+
+La chiave anon/publishable e' pensata per essere pubblica (compare gia' nel
+codice della app web, visibile a chiunque apra gli strumenti sviluppatore
+del browser): non e' un segreto, la sicurezza reale e' data dalla Row Level
+Security sul database (ogni utente vede/scrive solo cio' che gli e'
+consentito dai permessi assegnati in Matrice), non dal nascondere questa
+chiave. E' comunque tenuta fuori dal repository per evitare scanner
+automatici di credenziali e per permettere a ciascun ambiente (produzione,
+sviluppo, test) di avere la propria.
+"""
+
+SUPABASE_SETTINGS_GROUP = "matrice_plugin/supabase"
+
+DEFAULT_SUPABASE_URL = "https://<il-tuo-progetto>.supabase.co"
+DEFAULT_SUPABASE_ANON_KEY = "<la-tua-chiave-anon-publishable>"
