@@ -164,6 +164,25 @@ class MatriceApi:
         ) or []
 
     # ------------------------------------------------------------------
+    # Scheda colonna stratigrafica / carotaggio completa
+    # (ui/punto_dettaglio_dialog.py, doppio click su un elemento
+    # selezionato): niente legame con una US, a differenza di get_us.
+    # ------------------------------------------------------------------
+    def get_colonna_stratigrafica(self, colonna_id, access_token):
+        rows = self.rest.select("colonna_stratigrafica", access_token, params={"id": f"eq.{colonna_id}"})
+        return rows[0] if rows else None
+
+    def update_colonna_stratigrafica(self, colonna_id, campi, access_token):
+        return self.rest.update("colonna_stratigrafica", "id", colonna_id, campi, access_token)
+
+    def get_carotaggio(self, carotaggio_id, access_token):
+        rows = self.rest.select("carotaggio", access_token, params={"id": f"eq.{carotaggio_id}"})
+        return rows[0] if rows else None
+
+    def update_carotaggio(self, carotaggio_id, campi, access_token):
+        return self.rest.update("carotaggio", "id", carotaggio_id, campi, access_token)
+
+    # ------------------------------------------------------------------
     # Storage: le colonne foto_*_url/file_url (reperto, foto_scavo,
     # fotogrammetria, carotaggio, colonna_stratigrafica) NON sono URL
     # completi, sono percorsi relativi dentro il bucket privato
