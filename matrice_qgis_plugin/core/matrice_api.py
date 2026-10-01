@@ -193,8 +193,9 @@ class MatriceApi:
     FOTO_BUCKET = "foto-scavo"
 
     def scarica_foto(self, percorso_relativo, access_token):
+        """Ritorna (dati, None) se riuscito, o (None, messaggio_errore) altrimenti."""
         if not percorso_relativo:
-            return None
+            return None, None
         return self.rest.download_object(self.FOTO_BUCKET, percorso_relativo, access_token)
 
     def list_foto_scavo(self, us_id, access_token):

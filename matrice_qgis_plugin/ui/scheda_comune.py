@@ -119,28 +119,36 @@ class SchedaConFotoBase:
         return self.session.access_token
 
     def _carica_pixmap(self, percorso_relativo):
-        """Scarica una foto dal bucket privato e la ritorna come QPixmap, o None (mai un'eccezione)."""
+        """
+        Scarica una foto dal bucket privato e la ritorna come (QPixmap, None)
+        se riuscito, o (None, messaggio_diagnostico) altrimenti -- mai
+        un'eccezione.
+        """
         if not percorso_relativo:
-            return None
-        dati = self.matrice_api.scarica_foto(percorso_relativo, self._token())
+            return None, None
+        dati, errore = self.matrice_api.scarica_foto(percorso_relativo, self._token())
         if dati is None:
-            return None
+            return None, errore or "nessun dato ricevuto"
         pixmap = QPixmap()
         if not pixmap.loadFromData(dati):
-            return None
+            return None, f"dati scaricati ma non leggibili come immagine ({len(dati)} byte)"
         if pixmap.width() > IMAGE_PREVIEW_WIDTH:
             pixmap = pixmap.scaledToWidth(IMAGE_PREVIEW_WIDTH, Qt.SmoothTransformation)
-        return pixmap
+        return pixmap, None
 
     def _etichetta_foto(self, percorso_relativo, didascalia=None):
-        """QLabel con l'anteprima immagine (o un avviso testuale se non disponibile)."""
+        """QLabel con l'anteprima immagine (o un avviso testuale, con motivo, se non disponibile)."""
         label = QLabel()
-        pixmap = self._carica_pixmap(percorso_relativo)
+        pixmap, errore = self._carica_pixmap(percorso_relativo)
         if pixmap is not None:
             label.setPixmap(pixmap)
-        else:
-            label.setText("(immagine non disponibile)" if percorso_relativo else "(nessuna foto)")
+        elif not percorso_relativo:
+            label.setText("(nessuna foto)")
             label.setStyleSheet("color: #666;")
+        else:
+            label.setText(f"(immagine non disponibile -- {errore})")
+            label.setStyleSheet("color: #666;")
+            label.setWordWrap(True)
         if didascalia:
             wrapper = QWidget()
             layout = QVBoxLayout(wrapper)

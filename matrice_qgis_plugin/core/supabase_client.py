@@ -93,15 +93,24 @@ class SupabaseRestClient:
     # (policy su storage.objects basata su has_cantiere_access).
     # ------------------------------------------------------------------
     def download_object(self, bucket, path, access_token):
-        """Scarica un file da Storage. Ritorna i byte, o None se non accessibile/non trovato."""
+        """
+        Scarica un file da Storage. Ritorna (dati, None) se riuscito, o
+        (None, messaggio_errore) altrimenti -- il messaggio e' diagnostico
+        (per capire PERCHE' una foto non si vede: permessi, percorso
+        sbagliato, rete), non va mostrato cosi' com'e' in un contesto non
+        tecnico, ma e' utile in fase di verifica.
+        """
         url = f"{self.base_url}/storage/v1/object/{bucket}/{path}"
         headers = {"apikey": self.anon_key, "Authorization": f"Bearer {access_token or self.anon_key}"}
         request = urllib.request.Request(url, headers=headers, method="GET")
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return response.read()
-        except (urllib.error.URLError, urllib.error.HTTPError):
-            return None
+                return response.read(), None
+        except urllib.error.HTTPError as exc:
+            corpo = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            return None, f"HTTP {exc.code}: {corpo[:200]}"
+        except urllib.error.URLError as exc:
+            return None, f"Rete: {exc.reason}"
 
     def update(self, table, id_column, record_id, fields, access_token):
         """

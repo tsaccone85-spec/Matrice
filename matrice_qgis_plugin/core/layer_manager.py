@@ -79,7 +79,7 @@ LAYER_SOURCES = {
         "display_name": "Colonne stratigrafiche",
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
-        "campi_nascosti": ("id", "cantiere_id", "created_by", "stratigrafia"),
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "stratigrafia", "storage_provider"),
         "espressione_display": "'Colonna ' || \"numero_colonna\"",
     },
     "sezione_prospetto": {
