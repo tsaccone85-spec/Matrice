@@ -172,6 +172,8 @@ class GpsImportDialog(QDialog, FORM_CLASS):
             self.matchesTable.setItem(posizione, 0, QTableWidgetItem(str(riga.get("codice_punto") or "")))
             self.matchesTable.setItem(posizione, 1, QTableWidgetItem(f"{riga['x']:.3f}"))
             self.matchesTable.setItem(posizione, 2, QTableWidgetItem(f"{riga['y']:.3f}"))
+            quota = riga.get("quota")
+            self.matchesTable.setItem(posizione, 3, QTableWidgetItem(f"{quota:.3f}" if quota is not None else "--"))
 
         self.unmatchedListWidget.clear()
         for riga in risultato.unmatched:

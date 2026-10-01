@@ -15,6 +15,12 @@ numero US. Colonne stratigrafiche e carotaggi NON hanno nessun legame con
 una US: ogni punto va abbinato alla singola colonna/carotaggio con lo
 stesso numero, e se quella colonna/quel carotaggio aveva gia' una
 posizione, l'importazione la sostituisce (QGIS sovrascrive Matrice).
+
+Un rilievo GPS differenziale porta sempre anche la quota del punto (non
+solo x/y): per colonna_stratigrafica/carotaggio viene scritta direttamente
+in quota_slm insieme a lat/lng, invece di lasciarla al ricalcolo dal DEM
+(core/point_position_sync.py, che si applica solo quando il punto viene
+spostato a mano in QGIS, non quando arriva gia' da un'importazione GPS).
 """
 
 import csv
@@ -22,6 +28,21 @@ import csv
 ENTITA_US = "us"
 ENTITA_COLONNA = "colonna_stratigrafica"
 ENTITA_CAROTAGGIO = "carotaggio"
+
+# Nomi di colonna/campo in cui cercare la quota, in ordine di preferenza.
+# "ele" e' il nome standard del campo elevazione nei waypoint GPX letti da
+# OGR; gli altri sono varianti comuni di CSV/SHP/DXF esportati da software
+# diversi di post-processamento GPS.
+CAMPI_QUOTA = ("ele", "z", "quota", "elevazione", "h")
+
+
+def _numero_o_none(valore):
+    if valore in (None, ""):
+        return None
+    try:
+        return float(valore)
+    except (TypeError, ValueError):
+        return None
 
 
 class GpsImportResult:
@@ -66,8 +87,9 @@ class GpsImporter:
             for row in reader:
                 codice_punto = row.get("codice") or row.get("point_id")
                 x, y = float(row["x"]), float(row["y"])
+                quota = next((_numero_o_none(row.get(c)) for c in CAMPI_QUOTA if row.get(c) not in (None, "")), None)
                 id_target = codici.get(codice_punto)
-                entry = {"codice_punto": codice_punto, "x": x, "y": y, "id_target": id_target}
+                entry = {"codice_punto": codice_punto, "x": x, "y": y, "quota": quota, "id_target": id_target}
                 if id_target:
                     result.matches.append(entry)
                 else:
@@ -148,13 +170,21 @@ class GpsImporter:
             geometria = feature.geometry()
             if geometria is None or geometria.isEmpty():
                 continue
+            quota = self._quota_da_feature(feature, geometria)
             # centroid() funziona anche per una geometria gia' puntuale
             # (ritorna il punto stesso), evitando di distinguere caso per
-            # caso il tipo di geometria restituito dai vari driver OGR.
+            # caso il tipo di geometria restituito dai vari driver OGR --
+            # ma appiattisce la quota, va estratta prima (sopra).
             punto = geometria.centroid().asPoint()
             codice_punto = str(feature[campo_codice]) if campo_presente and feature[campo_codice] else None
             id_target = codici.get(codice_punto) if codice_punto else None
-            entry = {"codice_punto": codice_punto, "x": punto.x(), "y": punto.y(), "id_target": id_target}
+            entry = {
+                "codice_punto": codice_punto,
+                "x": punto.x(),
+                "y": punto.y(),
+                "quota": quota,
+                "id_target": id_target,
+            }
             if id_target:
                 result.matches.append(entry)
             else:
@@ -166,6 +196,29 @@ class GpsImporter:
             # abbinamenti, ma vale la pena segnalarlo esplicitamente.
             result.campo_codice_non_trovato = campo_codice
         return result
+
+    # ------------------------------------------------------------------
+    def _quota_da_feature(self, feature, geometria):
+        """
+        Quota del punto, cercata prima nella geometria stessa (SHP/DXF
+        rilevati in 3D hanno gia' la Z nel vertice), poi nei campi
+        attributo del file (GPX: campo "ele" del waypoint; CSV/SHP/DXF
+        hanno gia' CAMPI_QUOTA gestito a parte da import_csv).
+        """
+        vertice = geometria.vertexAt(0)
+        geom_concreta = geometria.constGet()
+        if geom_concreta is not None and geom_concreta.is3D():
+            z = vertice.z()
+            if z == z:  # esclude NaN (vertice senza Z nonostante is3D())
+                return z
+
+        nomi_campi = feature.fields().names()
+        for nome_campo in CAMPI_QUOTA:
+            if nome_campo in nomi_campi:
+                valore = _numero_o_none(feature[nome_campo])
+                if valore is not None:
+                    return valore
+        return None
 
     # ------------------------------------------------------------------
     def _codici_cantiere(self, cantiere_id, entita):
@@ -197,19 +250,29 @@ class GpsImporter:
           vettoriale gia' legato a quella US (percorso storico, per i
           punti naturalmente associati a una unita' stratigrafica).
         - entita="colonna_stratigrafica"/"carotaggio": sovrascrive
-          lat/lng della singola colonna/carotaggio con lo stesso numero.
-          Non c'e' nessun legame con una US: se la colonna/il carotaggio
-          aveva gia' una posizione, viene sostituita.
+          lat/lng (e quota_slm, se il file la riportava) della singola
+          colonna/carotaggio con lo stesso numero. Non c'e' nessun legame
+          con una US: se la colonna/il carotaggio aveva gia' una
+          posizione, viene sostituita. Se il punto non aveva una quota
+          leggibile, quota_slm non viene toccata (mai sovrascritta con un
+          valore vuoto).
         """
         tabella_punto_diretto = {ENTITA_COLONNA: "colonna_stratigrafica", ENTITA_CAROTAGGIO: "carotaggio"}.get(
             entita
         )
         for match in matches:
             if tabella_punto_diretto:
-                self.connection.execute(
-                    f"UPDATE {tabella_punto_diretto} SET lat = %s, lng = %s WHERE id = %s;",
-                    (match["y"], match["x"], match["id_target"]),
-                )
+                quota = match.get("quota")
+                if quota is not None:
+                    self.connection.execute(
+                        f"UPDATE {tabella_punto_diretto} SET lat = %s, lng = %s, quota_slm = %s WHERE id = %s;",
+                        (match["y"], match["x"], quota, match["id_target"]),
+                    )
+                else:
+                    self.connection.execute(
+                        f"UPDATE {tabella_punto_diretto} SET lat = %s, lng = %s WHERE id = %s;",
+                        (match["y"], match["x"], match["id_target"]),
+                    )
             else:
                 self.connection.execute(
                     """

@@ -9,9 +9,11 @@ plugin PyQGIS").
 
 import os
 
+import configparser
+
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QDockWidget
+from qgis.PyQt.QtWidgets import QAction, QDockWidget, QMessageBox
 
 from .core.auth import SessionManager
 from .core.basemap_manager import BasemapManager
@@ -99,27 +101,41 @@ class MatricePlugin:
     # Ciclo di vita QGIS
     # ------------------------------------------------------------------
     def initGui(self):
-        """Chiamato da QGIS all'avvio: crea toolbar, azione e dock widget."""
+        """
+        Chiamato da QGIS all'avvio: crea la barra Matrice e il dock widget.
+
+        La barra (Configura / Accedi / Info) e' pensata per l'operatore non
+        ancora autenticato: una volta fatto l'accesso non serve piu' (il
+        pannello con cantieri/livelli la sostituisce del tutto), quindi
+        sparisce -- ricompare al logout (handle_logout). Le stesse azioni
+        restano comunque raggiungibili dal menu "Matrice" in ogni momento,
+        anche a barra nascosta.
+        """
         icon_path = os.path.join(PLUGIN_DIR, "resources", "icons", "matrice.png")
         self.toolbar = self.iface.addToolBar("Matrice")
         self.toolbar.setObjectName("MatriceToolbar")
 
-        action = QAction(QIcon(icon_path), "Apri pannello Matrice", self.iface.mainWindow())
-        action.triggered.connect(self.toggle_dock)
-        self.toolbar.addAction(action)
-        self.iface.addPluginToMenu("&Matrice", action)
-        self.actions.append(action)
-
         # Sezione 2/10: prima si impostava host/porta/credenziali da
         # Console Python di QGIS -- ora c'e' una schermata dedicata,
-        # raggiungibile sia dal menu sia (automaticamente) al primo
+        # raggiungibile sia dal menu/barra sia (automaticamente) al primo
         # accesso se la connessione non e' ancora configurata.
-        settings_action = QAction(
-            QIcon(icon_path), "Impostazioni connessione...", self.iface.mainWindow()
-        )
-        settings_action.triggered.connect(self._show_connection_settings)
-        self.iface.addPluginToMenu("&Matrice", settings_action)
-        self.actions.append(settings_action)
+        configura_action = QAction(QIcon(icon_path), "Configura", self.iface.mainWindow())
+        configura_action.triggered.connect(self._show_connection_settings)
+        self.toolbar.addAction(configura_action)
+        self.iface.addPluginToMenu("&Matrice", configura_action)
+        self.actions.append(configura_action)
+
+        accedi_action = QAction(QIcon(icon_path), "Accedi", self.iface.mainWindow())
+        accedi_action.triggered.connect(self._on_accedi_clicked)
+        self.toolbar.addAction(accedi_action)
+        self.iface.addPluginToMenu("&Matrice", accedi_action)
+        self.actions.append(accedi_action)
+
+        info_action = QAction(QIcon(icon_path), "Info", self.iface.mainWindow())
+        info_action.triggered.connect(self._show_info)
+        self.toolbar.addAction(info_action)
+        self.iface.addPluginToMenu("&Matrice", info_action)
+        self.actions.append(info_action)
 
         self.dock_widget = MainDockWidget(self.iface.mainWindow())
         self.dock_widget.setObjectName("MatriceDockWidget")
@@ -127,7 +143,7 @@ class MatricePlugin:
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
 
         # Collega i segnali dell'interfaccia alla logica applicativa.
-        # Il login vero e proprio passa da LoginDialog (toggle_dock ->
+        # Il login vero e proprio passa da LoginDialog (_on_accedi_clicked ->
         # _show_login_dialog -> _verify_login -> _dopo_login_riuscito): il
         # dock widget si occupa solo di logout e delle azioni successive
         # all'accesso.
@@ -161,21 +177,26 @@ class MatricePlugin:
     # ------------------------------------------------------------------
     # Handler collegati ai segnali del dock widget (sezione 2 e 4)
     # ------------------------------------------------------------------
-    def toggle_dock(self):
-        if self.dock_widget.isVisible():
-            self.dock_widget.hide()
+    def _on_accedi_clicked(self):
+        if self.session.is_authenticated():
+            self.dock_widget.show()  # sessione gia' attiva (barra non ancora nascosta per qualche motivo)
             return
+        if not MatriceConnection.is_configured():
+            # Sezione 2: niente login se manca ancora la connessione al
+            # database -- fallirebbe con un errore tecnico. Si apre
+            # prima la schermata di configurazione.
+            if not self._show_connection_settings():
+                return
+        self._show_login_dialog()
 
-        if not self.session.is_authenticated():
-            if not MatriceConnection.is_configured():
-                # Sezione 2: niente login se manca ancora la connessione al
-                # database -- fallirebbe con un errore tecnico. Si apre
-                # prima la schermata di configurazione.
-                if not self._show_connection_settings():
-                    return
-            self._show_login_dialog()
-        else:
-            self.dock_widget.show()
+    def _show_info(self):
+        """Informazioni sul plugin (nome, versione, descrizione), lette da metadata.txt."""
+        parser = configparser.ConfigParser()
+        parser.read(os.path.join(PLUGIN_DIR, "metadata.txt"), encoding="utf-8")
+        nome = parser.get("general", "name", fallback="Matrice")
+        versione = parser.get("general", "version", fallback="")
+        descrizione = parser.get("general", "about", fallback="")
+        QMessageBox.information(self.iface.mainWindow(), "Informazioni su Matrice", f"{nome} - v{versione}\n\n{descrizione}")
 
     def _show_login_dialog(self):
         dialog = LoginDialog(
@@ -208,6 +229,10 @@ class MatricePlugin:
             return
         self.dock_widget.populate_cantieri(cantieri)
         self.dock_widget.show()
+        # La barra Configura/Accedi/Info non serve piu' una volta dentro:
+        # il pannello appena mostrato la sostituisce (ricompare al logout,
+        # vedi handle_logout). Le stesse azioni restano nel menu "Matrice".
+        self.toolbar.setVisible(False)
         # Sfondi satellite/CTR (sezione ...): aggiunti una sola volta a
         # sessione QGIS, non duplicati se gia' presenti (BasemapManager).
         self.basemap_manager.ensure_default_basemaps()
@@ -216,8 +241,8 @@ class MatricePlugin:
         """
         Apre la schermata di configurazione connessione (sezione 2/10).
         Ritorna True se, al termine, la connessione risulta configurata
-        (salvata ora o gia' presente da prima) -- usato da toggle_dock per
-        decidere se proseguire subito con il login.
+        (salvata ora o gia' presente da prima) -- usato da _on_accedi_clicked
+        per decidere se proseguire subito con il login.
         """
         dialog = ConnectionSettingsDialog(self.iface.mainWindow())
         if dialog.exec_():
@@ -234,6 +259,8 @@ class MatricePlugin:
     def handle_logout(self):
         self.session.logout()
         self.dock_widget.reset()
+        self.dock_widget.hide()
+        self.toolbar.setVisible(True)
 
     def handle_open_tavola(self, cantiere_id, nome_cantiere=None):
         """
