@@ -17,7 +17,7 @@ from .core.auth import SessionManager
 from .core.db_connector import MatriceConnection
 from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
-from .core.layer_manager import LayerManager
+from .core.layer_manager import LAYER_SOURCES, LayerManager
 from .core.matrice_api import MatriceApi
 from .core.point_position_sync import PointPositionSyncHandler
 from .core.sync_handler import SyncHandler
@@ -113,6 +113,7 @@ class MatricePlugin:
         self.dock_widget.cantiere_selected.connect(self.handle_open_tavola)
         self.dock_widget.quick_view_requested.connect(self.handle_quick_view)
         self.dock_widget.gps_import_requested.connect(self.handle_gps_import)
+        self.dock_widget.layer_visibility_toggled.connect(self.handle_toggle_layer_visibility)
         self.dock_widget.populate_quick_views(self.quick_view_manager.available_views())
 
     def unload(self):
@@ -207,6 +208,12 @@ class MatricePlugin:
         Sezione 4, passo 1: apertura tavola -> layer PostGIS nativi filtrati
         sul cantiere.
 
+        Vengono aggiunti in mappa subito solo i livelli che hanno gia' dei
+        dati per questo cantiere (LayerManager.load_cantiere decide in base
+        al conteggio righe); gli altri restano disponibili a richiesta nel
+        pannello "Livelli del cantiere", spuntabili per aggiungerli vuoti e
+        iniziare a digitalizzare (vedi handle_toggle_layer_visibility).
+
         I layer si dividono su due percorsi di sincronizzazione distinti
         (sezione 5): rilievo_geometria/rilievo_quota (geometria PostGIS vera
         e propria, via SyncHandler) e i tre layer puntuali con lat/lng
@@ -215,18 +222,14 @@ class MatricePlugin:
         manuale vince, altrimenti ricalcolo dal DEM".
         """
         self.session.cantiere_corrente_id = cantiere_id
-        layers = self.layer_manager.load_cantiere(cantiere_id)
+        layers, has_data = self.layer_manager.load_cantiere(cantiere_id)
 
         for key, layer in layers.items():
-            if key in LayerManager.POINT_SYNC_TABLES:
-                table_name = LayerManager.POINT_SYNC_TABLES[key]
-                self.point_sync_handler.watch(layer, table_name, cantiere_id)
-            else:
-                # rilievo_geometria si scrive sulla tabella base, non sulla
-                # vista v_rilievo_geometria_qgis (sola lettura per i campi
-                # extra); rilievo_quota coincide gia' con la propria tabella.
-                table_name = "rilievo_geometria" if key == "rilievo_geometria" else key
-                self.sync_handler.watch_layer(layer, table_name)
+            if has_data[key]:
+                self._watch_layer_sync(key, layer, cantiere_id)
+
+        layer_states = [(key, opts["display_name"], has_data[key]) for key, opts in LAYER_SOURCES.items()]
+        self.dock_widget.populate_layer_toggles(cantiere_id, layer_states)
 
         fasi_rows = self.matrice_api.list_fasi(cantiere_id, self.session.access_token)
         self._fasi_correnti = [row["fase"] for row in fasi_rows]
@@ -234,19 +237,49 @@ class MatricePlugin:
         us_rows = self.matrice_api.list_us(cantiere_id, self.session.access_token, solo_attive=False)
         self.dock_widget.populate_us_attive(us_rows)
 
-        # Stile di base del rilievo (sezione 6): categorizzazione per
-        # materiale/tipologia sul campo `layer`, fornita dall'utente
-        # (config/styles/US.qml). Applicata subito all'apertura tavola,
-        # prima ancora che l'operatore scelga una vista rapida.
-        rilievo = layers.get("rilievo_geometria")
-        if rilievo is not None:
-            us_qml_path = os.path.join(PLUGIN_DIR, "config", "styles", "US.qml")
-            try:
-                self.style_manager.load_qml(
-                    rilievo, us_qml_path, known_fields=[f.name() for f in rilievo.fields()]
-                )
-            except Exception as exc:  # StyleValidationError o RuntimeError di QGIS
-                self._show_warning(str(exc))
+        # Stile di base del rilievo (sezione 6), solo se gia' in mappa: se
+        # "Rilievo vettoriale" e' vuoto e non ancora mostrato, lo stile si
+        # applica al momento in cui l'operatore lo aggiunge dalla spunta
+        # (vedi handle_toggle_layer_visibility).
+        if has_data.get("rilievo_geometria"):
+            self._apply_us_style(layers["rilievo_geometria"])
+
+    def _watch_layer_sync(self, key, layer, cantiere_id):
+        """Aggancia il layer appena mostrato in mappa al percorso di sincronizzazione giusto (sezione 5)."""
+        if key in LayerManager.POINT_SYNC_TABLES:
+            table_name = LayerManager.POINT_SYNC_TABLES[key]
+            self.point_sync_handler.watch(layer, table_name, cantiere_id)
+        else:
+            # rilievo_geometria si scrive sulla tabella base, non sulla
+            # vista v_rilievo_geometria_qgis (sola lettura per i campi
+            # extra); rilievo_quota coincide gia' con la propria tabella.
+            table_name = "rilievo_geometria" if key == "rilievo_geometria" else key
+            self.sync_handler.watch_layer(layer, table_name)
+
+    def _apply_us_style(self, rilievo_layer):
+        us_qml_path = os.path.join(PLUGIN_DIR, "config", "styles", "US.qml")
+        try:
+            self.style_manager.load_qml(
+                rilievo_layer, us_qml_path, known_fields=[f.name() for f in rilievo_layer.fields()]
+            )
+        except Exception as exc:  # StyleValidationError o RuntimeError di QGIS
+            self._show_warning(str(exc))
+
+    def handle_toggle_layer_visibility(self, cantiere_id, key, checked):
+        """
+        Spunta nel pannello "Livelli del cantiere": aggiunge o rimuove un
+        livello dalla mappa su richiesta esplicita dell'operatore (per i
+        livelli senza dati, non caricati automaticamente da
+        handle_open_tavola).
+        """
+        if checked:
+            layer, era_gia_visibile = self.layer_manager.show_layer(cantiere_id, key)
+            if not era_gia_visibile:
+                self._watch_layer_sync(key, layer, cantiere_id)
+                if key == "rilievo_geometria":
+                    self._apply_us_style(layer)
+        else:
+            self.layer_manager.hide_layer(cantiere_id, key)
 
     def handle_quick_view(self, cantiere_id, view_key):
         """Sezione 6: applica in un solo clic filtro + stile di una vista rapida."""

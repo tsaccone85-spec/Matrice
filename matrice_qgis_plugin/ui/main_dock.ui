@@ -59,6 +59,20 @@
     </widget>
    </item>
    <item>
+    <widget class="QLabel" name="layerToggleLabel">
+     <property name="text">
+      <string>Livelli del cantiere</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QListWidget" name="layerToggleListWidget">
+     <property name="selectionMode">
+      <enum>QAbstractItemView::NoSelection</enum>
+     </property>
+    </widget>
+   </item>
+   <item>
     <layout class="QHBoxLayout" name="quickViewLayout">
      <item>
       <widget class="QLabel" name="quickViewLabel">

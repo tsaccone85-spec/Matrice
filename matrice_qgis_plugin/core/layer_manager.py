@@ -80,30 +80,86 @@ class LayerManager:
         self.connection = connection
         self._layers_by_cantiere = {}
 
+    def _build_layer(self, cantiere_id, key):
+        """Costruisce (senza aggiungere in mappa) il layer PostGIS per `key`."""
+        opts = LAYER_SOURCES[key]
+        uri = self.connection.postgis_uri(
+            opts["source"],
+            geometry_column=opts["geometry_column"],
+            key_column=opts["key_column"],
+            wkb_type=opts["wkb_type"],
+            srid=opts["srid"],
+        )
+        # cantiere_id e' un uuid, non un intero: va quotato nel subset SQL.
+        uri.setSql(f"cantiere_id = '{cantiere_id}'")
+        layer = QgsVectorLayer(uri.uri(False), f"{opts['display_name']} - cantiere {cantiere_id}", "postgres")
+        if not layer.isValid():
+            raise RuntimeError(f"Impossibile caricare il layer '{key}' da Matrice.")
+        return layer
+
     def load_cantiere(self, cantiere_id):
-        """Carica (o ricarica) i layer del cantiere selezionato. Sezione 4, passo 1."""
+        """
+        Carica (o ricarica) i layer del cantiere selezionato (sezione 4,
+        passo 1). Per non affollare la mappa di livelli vuoti al primo
+        utilizzo (es. un cantiere appena iniziato, dove magari e' stato
+        rilevato solo un tipo di dato), vengono aggiunti subito solo i
+        livelli che hanno gia' almeno una riga per questo cantiere; gli
+        altri restano disponibili a richiesta (vedi show_layer), spuntabili
+        dal pannello Matrice.
+
+        Ritorna (layers, has_data): entrambi dict con le stesse chiavi di
+        LAYER_SOURCES; layers contiene sempre l'oggetto QgsVectorLayer
+        (anche per quelli non ancora aggiunti in mappa), has_data dice se
+        all'apertura aveva gia' righe (quindi e' stato aggiunto subito).
+        """
         layers = {}
-        for key, opts in LAYER_SOURCES.items():
-            uri = self.connection.postgis_uri(
-                opts["source"],
-                geometry_column=opts["geometry_column"],
-                key_column=opts["key_column"],
-                wkb_type=opts["wkb_type"],
-                srid=opts["srid"],
-            )
-            # cantiere_id e' un uuid, non un intero: va quotato nel subset SQL.
-            uri.setSql(f"cantiere_id = '{cantiere_id}'")
-            layer = QgsVectorLayer(uri.uri(False), f"{opts['display_name']} - cantiere {cantiere_id}", "postgres")
-            if not layer.isValid():
-                raise RuntimeError(f"Impossibile caricare il layer '{key}' da Matrice.")
-            QgsProject.instance().addMapLayer(layer)
+        has_data = {}
+        for key in LAYER_SOURCES:
+            layer = self._build_layer(cantiere_id, key)
             layers[key] = layer
+            if layer.featureCount() > 0:
+                QgsProject.instance().addMapLayer(layer)
+                has_data[key] = True
+            else:
+                has_data[key] = False
 
         self._layers_by_cantiere[cantiere_id] = layers
-        return layers
+        return layers, has_data
 
     def current_layers(self, cantiere_id):
         return self._layers_by_cantiere.get(cantiere_id, {})
+
+    def is_layer_shown(self, cantiere_id, key):
+        layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
+        return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
+
+    def show_layer(self, cantiere_id, key):
+        """
+        Aggiunge in mappa il livello `key` del cantiere, su richiesta
+        dell'operatore (spunta nel pannello). Se era gia' stato rimosso in
+        precedenza lo ricostruisce da capo (l'oggetto QGIS viene distrutto
+        da removeMapLayer). Ritorna (layer, era_gia_visibile): il secondo
+        valore serve a chi chiama per capire se e' la prima volta che
+        questo layer compare in mappa per questo cantiere (e quindi va
+        agganciato alla sincronizzazione delle modifiche).
+        """
+        layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
+        if layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None:
+            return layer, True  # gia' visibile, nessuna nuova azione da fare
+
+        layer = self._build_layer(cantiere_id, key)
+        QgsProject.instance().addMapLayer(layer)
+        self._layers_by_cantiere.setdefault(cantiere_id, {})[key] = layer
+        return layer, False
+
+    def hide_layer(self, cantiere_id, key):
+        """Rimuove dalla mappa il livello `key` del cantiere (spunta tolta)."""
+        layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
+        if layer is None:
+            return
+        if QgsProject.instance().mapLayer(layer.id()) is not None:
+            QgsProject.instance().removeMapLayer(layer.id())
+        self._layers_by_cantiere.get(cantiere_id, {}).pop(key, None)
 
     # Le tre viste puntuali con lat/lng dirette, sincronizzate tramite
     # point_position_sync.py (distinte dalla geometria US, che usa il

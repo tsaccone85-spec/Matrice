@@ -119,7 +119,11 @@ dello stesso colore ne' facilmente confondibili tra loro.
 - Connessione PostgreSQL/PostGIS tecnica per i soli layer in mappa
   (`core/db_connector.py`)
 - Caricamento layer come layer PostGIS nativi, nessun file intermedio
-  (`core/layer_manager.py`, mappa `LAYER_SOURCES` su viste/tabelle reali)
+  (`core/layer_manager.py`, mappa `LAYER_SOURCES` su viste/tabelle reali).
+  All'apertura tavola vengono aggiunti in mappa solo i livelli che hanno
+  gia' dei dati per quel cantiere; gli altri restano disponibili a
+  richiesta nel pannello "Livelli del cantiere" (spunta per aggiungerli
+  vuoti e iniziare a digitalizzare)
 - Intercettazione dei commit di editing verso `us_storico_modifiche`, con
   tracciamento del valore precedente della geometria, divisa su due
   percorsi (`core/sync_handler.py` per la geometria US,

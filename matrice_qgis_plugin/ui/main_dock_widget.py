@@ -19,17 +19,20 @@ class MainDockWidget(QDockWidget):
     cantiere_selected = pyqtSignal(str)  # cantiere.id e' uuid, non intero
     quick_view_requested = pyqtSignal(str, str)
     gps_import_requested = pyqtSignal(str)  # cantiere.id del rilievo aperto
+    layer_visibility_toggled = pyqtSignal(str, str, bool)  # cantiere_id, layer_key, mostra/nascondi
 
     def __init__(self, parent=None):
         super().__init__("Matrice", parent)
         self._content = uic.loadUi(os.path.join(os.path.dirname(__file__), "main_dock.ui"))
         self.setWidget(self._content)
+        self._cantiere_corrente_id = None  # per sapere a quale cantiere riferire i toggle dei livelli
 
         self._content.errorLabel.setText("")
         self._content.apriTavolaButton.clicked.connect(self._on_apri_tavola)
         self._content.applyQuickViewButton.clicked.connect(self._on_apply_quick_view)
         self._content.importaGpsButton.clicked.connect(self._on_importa_gps)
         self._content.logoutButton.clicked.connect(self.logout_requested.emit)
+        self._content.layerToggleListWidget.itemChanged.connect(self._on_layer_toggle_changed)
 
     # ------------------------------------------------------------------
     # Popolamento da Matrice (sola lettura filtrata sui permessi utente)
@@ -71,6 +74,33 @@ class MainDockWidget(QDockWidget):
             item.setCheckState(Qt.Checked if us["attiva"] else Qt.Unchecked)
             list_widget.addItem(item)
 
+    def populate_layer_toggles(self, cantiere_id, layer_states):
+        """
+        layer_states: [(key, display_name, has_data), ...] -- uno per
+        ciascun livello di LayerManager.LAYER_SOURCES. Spuntati quelli gia'
+        in mappa (has_data=True, caricati automaticamente all'apertura
+        tavola perche' contengono dati); gli altri restano disponibili a
+        richiesta, spuntabili per aggiungerli comunque in mappa (vuoti,
+        pronti per iniziare a digitalizzare).
+        """
+        self._cantiere_corrente_id = cantiere_id
+        list_widget = self._content.layerToggleListWidget
+        list_widget.blockSignals(True)
+        list_widget.clear()
+        for key, display_name, has_data in layer_states:
+            item = QListWidgetItem(display_name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setData(Qt.UserRole, key)
+            item.setCheckState(Qt.Checked if has_data else Qt.Unchecked)
+            list_widget.addItem(item)
+        list_widget.blockSignals(False)
+
+    def _on_layer_toggle_changed(self, item):
+        if self._cantiere_corrente_id is None:
+            return
+        key = item.data(Qt.UserRole)
+        self.layer_visibility_toggled.emit(self._cantiere_corrente_id, key, item.checkState() == Qt.Checked)
+
     def populate_quick_views(self, views):
         """views: [(chiave, etichetta), ...] da QuickViewManager.available_views()."""
         combo = self._content.quickViewCombo
@@ -94,6 +124,8 @@ class MainDockWidget(QDockWidget):
         self._content.cantiereCombo.clear()
         self._content.fasiListWidget.clear()
         self._content.usAttiveListWidget.clear()
+        self._content.layerToggleListWidget.clear()
+        self._cantiere_corrente_id = None
         self._content.errorLabel.setText("")
 
     # ------------------------------------------------------------------
