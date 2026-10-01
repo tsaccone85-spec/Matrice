@@ -14,6 +14,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QDockWidget
 
 from .core.auth import SessionManager
+from .core.basemap_manager import BasemapManager
 from .core.db_connector import MatriceConnection
 from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
@@ -49,6 +50,7 @@ class MatricePlugin:
         # connessione diretta (sezione 1 -- "servizio intermedio").
         self.matrice_api = MatriceApi(self.session)
         self.layer_manager = LayerManager(self.connection)
+        self.basemap_manager = BasemapManager()
         self.style_manager = StyleManager()
         self.quick_view_manager = QuickViewManager(
             config_path=os.path.join(PLUGIN_DIR, "config", "quick_views.json"),
@@ -179,6 +181,9 @@ class MatricePlugin:
             return
         self.dock_widget.populate_cantieri(cantieri)
         self.dock_widget.show()
+        # Sfondi satellite/CTR (sezione ...): aggiunti una sola volta a
+        # sessione QGIS, non duplicati se gia' presenti (BasemapManager).
+        self.basemap_manager.ensure_default_basemaps()
 
     def _show_connection_settings(self):
         """
