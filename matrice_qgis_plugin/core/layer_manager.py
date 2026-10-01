@@ -21,11 +21,14 @@ from qgis.core import Qgis, QgsProject, QgsVectorLayer
 #
 # wkb_type/srid sono dichiarati qui esplicitamente e passati a
 # db_connector.postgis_uri(): senza, QGIS deve dedurli campionando i dati,
-# il che fallisce sia a subset SQL vuoto (nessuna riga per il cantiere
-# selezionato) sia -- caso di rilievo_geometria -- quando la colonna
-# contiene geometrie di tipo diverso tra loro (poligoni per gli strati,
-# linee per i tagli, punti per altre categorie: vedi config/styles/US.qml,
-# che infatti categorizza con simboli fill/line/marker mescolati).
+# il che fallisce a subset SQL vuoto (nessuna riga per il cantiere
+# selezionato, o tabella non ancora popolata) -- il provider non ha nulla
+# da campionare e segna il layer non valido.
+# Tipo confermato direttamente dal catalogo PostGIS (geometry_columns:
+# "punto", srid 4326) il 2026-10-01 -- NON e' geometria mista nonostante
+# config/styles/US.qml contenga anche simboli fill/line: quei livelli sono
+# probabilmente simboli annidati/non attivi per questo layer, non categorie
+# rilevanti per rilievo_geometria.
 # Tutte le geometrie di Matrice sono in WGS84 (core/sync_handler.py,
 # core/gps_import.py, core/dem_sampler.py usano tutti EPSG:4326).
 LAYER_SOURCES = {
@@ -34,7 +37,7 @@ LAYER_SOURCES = {
         "geometry_column": "geom",
         "key_column": "id_geom",
         "display_name": "Rilievo vettoriale",
-        "wkb_type": Qgis.WkbType.Unknown,  # tipi misti: poligoni/linee/punti
+        "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
     },
     "rilievo_quota": {
