@@ -12,7 +12,7 @@ import os
 import configparser
 
 from qgis.core import QgsFeatureRequest, QgsProject, QgsRectangle
-from qgis.gui import QgsMapTool, QgsMapToolIdentifyAction
+from qgis.gui import QgsMapTool
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QDockWidget, QMessageBox
@@ -454,7 +454,13 @@ class MatricePlugin:
             if event.button() != Qt.LeftButton:
                 return False
             strumento_attivo = self.iface.mapCanvas().mapTool()
-            if not isinstance(strumento_attivo, QgsMapToolIdentifyAction):
+            # QgsMapToolIdentifyAction (lo strumento "Identifica elementi"
+            # usato dall'applicazione QGIS) e' una classe interna
+            # dell'app, non esposta nei binding Python pubblici di
+            # qgis.gui in tutte le versioni di QGIS (ImportError altrimenti
+            # bloccante per l'intero plugin): si confronta il nome della
+            # classe come stringa invece di importarla per un isinstance().
+            if strumento_attivo is None or type(strumento_attivo).__name__ != "QgsMapToolIdentifyAction":
                 return False  # click singolo con un altro strumento: non e' affar nostro
 
         cantiere_id = self.session.cantiere_corrente_id
