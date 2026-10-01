@@ -206,11 +206,21 @@ precompilato di default, non va toccato:
    `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/` (Linux/Mac)
    o `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\` (Windows).
 2. Aggiungere un'icona in `resources/icons/matrice.png`.
-3. Installare la dipendenza mancante nell'ambiente Python di QGIS:
-   `pip install psycopg2-binary` (o usare l'OSGeo4W Shell su Windows).
-4. In QGIS: Estensioni -> Gestione estensioni -> Installate -> attivare
+3. Creare `core/supabase_config.py` (non incluso nel repository di proposito,
+   vedi `core/supabase_config.py.example`).
+4. Installare la dipendenza mancante (`psycopg2`) PRIMA di attivare il
+   plugin: da QGIS, Plugin -> Console Python, poi:
+   ```python
+   exec(open(r"PERCORSO/matrice_qgis_plugin/scripts/install_dependencies.py").read())
+   ```
+   (sostituire PERCORSO con il percorso reale della cartella del plugin).
+   Eseguire da dentro QGIS, non con un Python esterno: su Windows in
+   particolare, se ne possono trovare installati diversi sulla stessa
+   macchina, e psycopg2 deve finire in quello usato DA QGIS. Riavviare QGIS
+   al termine.
+5. In QGIS: Estensioni -> Gestione estensioni -> Installate -> attivare
    "Matrice - Rilievo di Scavo".
-5. Alla prima apertura del pannello Matrice, la schermata di configurazione
+6. Alla prima apertura del pannello Matrice, la schermata di configurazione
    connessione si apre da sola: inserire indirizzo del server, database,
    utente e password, verificare con "Testa connessione" e salvare (vedi
    "Interfaccia di configurazione connessione" sopra).
