@@ -19,7 +19,7 @@ from .scheda_comune import DynamicRecordForm, SchedaConFotoBase, in_area_scorrev
 CAMPI_ESCLUSI_COMUNI = {
     "id", "cantiere_id", "created_by", "created_at",
     "foto_1_url", "foto_2_url", "foto_3_url",
-    "stratigrafia", "storage_provider",
+    "stratigrafia", "storage_provider", "disegno_tavola",
 }
 
 
