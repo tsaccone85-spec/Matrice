@@ -19,11 +19,23 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QListWidgetItem, QTableWidgetItem
 
+from ..core.gps_import import ENTITA_CAROTAGGIO, ENTITA_COLONNA, ENTITA_US
+
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "gps_import_dialog.ui"))
 
 FORMATO_PER_ESTENSIONE = {".csv": "csv", ".gpx": "gpx", ".shp": "shp", ".dxf": "dxf"}
 CAMPO_CODICE_DEFAULT = {"shp": "codice", "dxf": "Text"}
 ETICHETTA_FORMATO = {"csv": "CSV", "gpx": "GPX (waypoint)", "shp": "Shapefile", "dxf": "DXF"}
+
+# Etichetta mostrata nel menu "Abbinare i punti a" -> valore di `entita`
+# passato a core/gps_import.py. Colonne stratigrafiche e carotaggi NON
+# hanno nessun legame con una US: il codice del punto e' il loro numero
+# proprio, non il numero US (vedi gps_import._codici_cantiere).
+OPZIONI_ENTITA = (
+    ("US (rilievo vettoriale / quote)", ENTITA_US),
+    ("Colonna stratigrafica", ENTITA_COLONNA),
+    ("Carotaggio", ENTITA_CAROTAGGIO),
+)
 
 
 class GpsImportDialog(QDialog, FORM_CLASS):
@@ -33,6 +45,11 @@ class GpsImportDialog(QDialog, FORM_CLASS):
         self.gps_importer = gps_importer
         self.cantiere_id = cantiere_id
         self._risultato = None
+
+        for etichetta, valore in OPZIONI_ENTITA:
+            self.entitaCombo.addItem(etichetta, valore)
+        self.entitaCombo.currentIndexChanged.connect(self._on_entita_cambiata)
+        self._on_entita_cambiata(0)
 
         self.browseButton.clicked.connect(self._on_browse)
         self.analyzeButton.clicked.connect(self._on_analyze)
@@ -44,6 +61,16 @@ class GpsImportDialog(QDialog, FORM_CLASS):
         self.statusLabel.setText("")
 
     # ------------------------------------------------------------------
+    def _on_entita_cambiata(self, _indice):
+        """Cambiare il tipo di abbinamento invalida un'eventuale analisi gia' fatta."""
+        etichetta, _valore = OPZIONI_ENTITA[self.entitaCombo.currentIndex()]
+        self.matchesLabel.setText(f"Punti abbinati a: {etichetta}")
+        self._risultato = None
+        self.confirmButton.setEnabled(False)
+        self.matchesTable.setRowCount(0)
+        self.unmatchedListWidget.clear()
+        self._set_status("", ok=None)
+
     def _on_browse(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -104,17 +131,17 @@ class GpsImportDialog(QDialog, FORM_CLASS):
         n_unmatched = len(risultato.unmatched)
         if n_match == 0:
             self._set_status(
-                f"Nessun punto abbinato a una US (letti {n_match + n_unmatched} punti dal file).", ok=False
+                f"Nessun punto abbinato (letti {n_match + n_unmatched} punti dal file).", ok=False
             )
         else:
-            self._set_status(f"{n_match} punti abbinati a una US, {n_unmatched} senza corrispondenza.", ok=True)
+            self._set_status(f"{n_match} punti abbinati, {n_unmatched} senza corrispondenza.", ok=True)
         self.confirmButton.setEnabled(n_match > 0)
 
     def _on_confirm(self):
         if not self._risultato or not self._risultato.matches:
             return
         try:
-            self.gps_importer.apply_matches(self._risultato.matches)
+            self.gps_importer.apply_matches(self._risultato.matches, entita=self._risultato.entita)
         except Exception as exc:
             self._set_status(self._messaggio_semplice(exc), ok=False)
             return
@@ -128,13 +155,14 @@ class GpsImportDialog(QDialog, FORM_CLASS):
     # ------------------------------------------------------------------
     def _analizza(self, path, formato):
         campo_codice = self.campoCodiceEdit.text().strip() or CAMPO_CODICE_DEFAULT.get(formato)
+        entita = self.entitaCombo.currentData()
         if formato == "csv":
-            return self.gps_importer.import_csv(path, self.cantiere_id)
+            return self.gps_importer.import_csv(path, self.cantiere_id, entita=entita)
         if formato == "gpx":
-            return self.gps_importer.import_gpx(path, self.cantiere_id)
+            return self.gps_importer.import_gpx(path, self.cantiere_id, entita=entita)
         if formato == "shp":
-            return self.gps_importer.import_shp(path, self.cantiere_id, campo_codice=campo_codice)
-        return self.gps_importer.import_dxf(path, self.cantiere_id, campo_codice=campo_codice)
+            return self.gps_importer.import_shp(path, self.cantiere_id, campo_codice=campo_codice, entita=entita)
+        return self.gps_importer.import_dxf(path, self.cantiere_id, campo_codice=campo_codice, entita=entita)
 
     def _popola_risultati(self, risultato):
         self.matchesTable.setRowCount(0)

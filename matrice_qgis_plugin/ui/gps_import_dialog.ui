@@ -17,6 +17,20 @@
     </widget>
    </item>
    <item>
+    <layout class="QHBoxLayout" name="entitaLayout">
+     <item>
+      <widget class="QLabel" name="entitaLabel">
+       <property name="text">
+        <string>Abbinare i punti a</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="entitaCombo"/>
+     </item>
+    </layout>
+   </item>
+   <item>
     <layout class="QHBoxLayout" name="fileLayout">
      <item>
       <widget class="QLabel" name="fileLabel">

@@ -136,6 +136,26 @@ class MatriceApi:
     def update_sepoltura(self, sepoltura_id, campi, access_token):
         return self.rest.update("sepoltura", "id", sepoltura_id, campi, access_token)
 
+    # ------------------------------------------------------------------
+    # Elenchi codice -> id per l'import GPS (core/gps_import.py): colonne
+    # stratigrafiche e carotaggi NON hanno nessun legame con una US, vanno
+    # abbinati al proprio numero (numero_colonna/numero_carotaggio), non al
+    # numero US come il percorso storico (vedi gps_import._codici_cantiere).
+    # ------------------------------------------------------------------
+    def list_colonne_stratigrafiche(self, cantiere_id, access_token):
+        return self.rest.select(
+            "colonna_stratigrafica",
+            access_token,
+            params={"select": "id,numero_colonna", "cantiere_id": f"eq.{cantiere_id}"},
+        ) or []
+
+    def list_carotaggi(self, cantiere_id, access_token):
+        return self.rest.select(
+            "carotaggio",
+            access_token,
+            params={"select": "id,numero_carotaggio", "cantiere_id": f"eq.{cantiere_id}"},
+        ) or []
+
     def list_foto_scavo(self, us_id, access_token):
         return self.rest.select(
             "foto_scavo",
