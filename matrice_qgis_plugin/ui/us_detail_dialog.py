@@ -14,12 +14,12 @@ Il form e' generato dinamicamente dai campi restituiti da PostgREST
 sepoltura hanno rispettivamente ~40 e ~50 campi testuali/numerici, un .ui
 statico sarebbe enorme e fragile ad ogni modifica dello schema reale.
 
-Nessuna dipendenza esterna per le immagini (stessa scelta di
-core/supabase_client.py): urllib + QPixmap.loadFromData, non requests.
+Le foto (foto_1_url/foto_2_url su reperto, file_url su foto_scavo) NON
+sono URL diretti: sono percorsi relativi dentro un bucket Storage privato
+(verificato su Supabase), quindi vanno scaricate con il token dell'utente
+tramite matrice_api.scarica_foto(), non con un link aperto a caso -- un
+bucket privato rifiuterebbe comunque una richiesta anonima.
 """
-
-import urllib.error
-import urllib.request
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QPixmap
@@ -78,42 +78,6 @@ def _e_testo_lungo(nome_campo):
     return any(indizio in nome_campo for indizio in INDIZI_TESTO_LUNGO)
 
 
-def _carica_pixmap(url):
-    """Scarica un'immagine da URL e la ritorna come QPixmap, o None se non disponibile (mai un'eccezione)."""
-    if not url:
-        return None
-    try:
-        with urllib.request.urlopen(url, timeout=IMAGE_TIMEOUT_SECONDS) as response:
-            dati = response.read()
-    except (urllib.error.URLError, ValueError, TimeoutError):
-        return None
-    pixmap = QPixmap()
-    if not pixmap.loadFromData(dati):
-        return None
-    if pixmap.width() > IMAGE_PREVIEW_WIDTH:
-        pixmap = pixmap.scaledToWidth(IMAGE_PREVIEW_WIDTH, Qt.SmoothTransformation)
-    return pixmap
-
-
-def _etichetta_foto(url, didascalia=None):
-    """QLabel con l'anteprima immagine (o un avviso testuale se non disponibile)."""
-    label = QLabel()
-    pixmap = _carica_pixmap(url)
-    if pixmap is not None:
-        label.setPixmap(pixmap)
-    else:
-        label.setText("(immagine non disponibile)" if url else "(nessuna foto)")
-        label.setStyleSheet("color: #666;")
-    if didascalia:
-        wrapper = QWidget()
-        layout = QVBoxLayout(wrapper)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(label)
-        caption = QLabel(didascalia)
-        caption.setWordWrap(True)
-        layout.addWidget(caption)
-        return wrapper
-    return label
 
 
 class DynamicRecordForm(QWidget):
@@ -226,6 +190,40 @@ class UsDetailDialog(QDialog):
     def _token(self):
         return self.session.access_token
 
+    def _carica_pixmap(self, percorso_relativo):
+        """Scarica una foto dal bucket privato e la ritorna come QPixmap, o None (mai un'eccezione)."""
+        if not percorso_relativo:
+            return None
+        dati = self.matrice_api.scarica_foto(percorso_relativo, self._token())
+        if dati is None:
+            return None
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(dati):
+            return None
+        if pixmap.width() > IMAGE_PREVIEW_WIDTH:
+            pixmap = pixmap.scaledToWidth(IMAGE_PREVIEW_WIDTH, Qt.SmoothTransformation)
+        return pixmap
+
+    def _etichetta_foto(self, percorso_relativo, didascalia=None):
+        """QLabel con l'anteprima immagine (o un avviso testuale se non disponibile)."""
+        label = QLabel()
+        pixmap = self._carica_pixmap(percorso_relativo)
+        if pixmap is not None:
+            label.setPixmap(pixmap)
+        else:
+            label.setText("(immagine non disponibile)" if percorso_relativo else "(nessuna foto)")
+            label.setStyleSheet("color: #666;")
+        if didascalia:
+            wrapper = QWidget()
+            layout = QVBoxLayout(wrapper)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(label)
+            caption = QLabel(didascalia)
+            caption.setWordWrap(True)
+            layout.addWidget(caption)
+            return wrapper
+        return label
+
     def _carica_dati(self):
         try:
             us_row = self.matrice_api.get_us(self.us_id, self._token())
@@ -299,8 +297,8 @@ class UsDetailDialog(QDialog):
         layout = QVBoxLayout(contenitore)
 
         foto_layout = QHBoxLayout()
-        foto_layout.addWidget(_etichetta_foto(reperto.get("foto_1_url"), "Foto 1"))
-        foto_layout.addWidget(_etichetta_foto(reperto.get("foto_2_url"), "Foto 2"))
+        foto_layout.addWidget(self._etichetta_foto(reperto.get("foto_1_url"), "Foto 1"))
+        foto_layout.addWidget(self._etichetta_foto(reperto.get("foto_2_url"), "Foto 2"))
         layout.addLayout(foto_layout)
 
         self._reperto_form_corrente = DynamicRecordForm(reperto, REPERTO_CAMPI_ESCLUSI)
@@ -330,7 +328,7 @@ class UsDetailDialog(QDialog):
                 foto.get("data_scatto"),
             ]
             didascalia = " - ".join(p for p in pezzi_didascalia if p)
-            layout.addWidget(_etichetta_foto(foto.get("file_url"), didascalia or foto.get("nome_file")))
+            layout.addWidget(self._etichetta_foto(foto.get("file_url"), didascalia or foto.get("nome_file")))
         layout.addStretch()
         return _in_area_scorrevole(contenitore)
 

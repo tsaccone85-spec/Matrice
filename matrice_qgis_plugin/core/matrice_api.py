@@ -156,6 +156,21 @@ class MatriceApi:
             params={"select": "id,numero_carotaggio", "cantiere_id": f"eq.{cantiere_id}"},
         ) or []
 
+    # ------------------------------------------------------------------
+    # Storage: le colonne foto_*_url/file_url (reperto, foto_scavo,
+    # fotogrammetria, carotaggio, colonna_stratigrafica) NON sono URL
+    # completi, sono percorsi relativi dentro il bucket privato
+    # "foto-scavo" (verificato direttamente su Supabase) -- va scaricata
+    # con il token dell'utente, un link diretto non funziona su un bucket
+    # privato.
+    # ------------------------------------------------------------------
+    FOTO_BUCKET = "foto-scavo"
+
+    def scarica_foto(self, percorso_relativo, access_token):
+        if not percorso_relativo:
+            return None
+        return self.rest.download_object(self.FOTO_BUCKET, percorso_relativo, access_token)
+
     def list_foto_scavo(self, us_id, access_token):
         return self.rest.select(
             "foto_scavo",

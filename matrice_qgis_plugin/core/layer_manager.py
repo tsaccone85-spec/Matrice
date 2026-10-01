@@ -66,7 +66,10 @@ LAYER_SOURCES = {
         "display_name": "Carotaggi",
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
-        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        # stratigrafia: jsonb (log carotaggio a livelli), illeggibile come
+        # testo grezzo in tabella attributi -- tolto su richiesta esplicita,
+        # non e' un id tecnico come gli altri campi qui.
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "stratigrafia"),
         "espressione_display": "'Carotaggio ' || \"numero_carotaggio\"",
     },
     "colonna_stratigrafica": {
@@ -76,7 +79,7 @@ LAYER_SOURCES = {
         "display_name": "Colonne stratigrafiche",
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
-        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "stratigrafia"),
         "espressione_display": "'Colonna ' || \"numero_colonna\"",
     },
     "sezione_prospetto": {

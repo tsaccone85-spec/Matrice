@@ -83,6 +83,26 @@ class SupabaseRestClient:
         except _HttpError as exc:
             raise SupabaseRequestError(self._messaggio_semplice(exc)) from exc
 
+    # ------------------------------------------------------------------
+    # Storage -- bucket privati (foto-scavo, documenti, geopackage): le
+    # colonne foto_*_url/file_url nelle tabelle NON sono URL completi, sono
+    # percorsi relativi dentro il bucket (verificato direttamente su
+    # Supabase, sezione 3 -- vedi matrice_api.scarica_foto). Essendo bucket
+    # privati, un link diretto non funziona: serve l'endpoint autenticato
+    # con il token dell'utente, stessa Row Level Security delle tabelle
+    # (policy su storage.objects basata su has_cantiere_access).
+    # ------------------------------------------------------------------
+    def download_object(self, bucket, path, access_token):
+        """Scarica un file da Storage. Ritorna i byte, o None se non accessibile/non trovato."""
+        url = f"{self.base_url}/storage/v1/object/{bucket}/{path}"
+        headers = {"apikey": self.anon_key, "Authorization": f"Bearer {access_token or self.anon_key}"}
+        request = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return response.read()
+        except (urllib.error.URLError, urllib.error.HTTPError):
+            return None
+
     def update(self, table, id_column, record_id, fields, access_token):
         """
         PATCH su /rest/v1/<table>?<id_column>=eq.<record_id> con il token
