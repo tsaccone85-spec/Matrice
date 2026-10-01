@@ -14,39 +14,60 @@ espongono un campo `geom` calcolato e traducono le modifiche di posizione
 in scritture su lat/lng tramite trigger lato database.
 """
 
-from qgis.core import QgsProject, QgsVectorLayer
+from qgis.core import Qgis, QgsProject, QgsVectorLayer
 
-# view/tabella -> colonna geometria, chiave primaria, nome visualizzato.
+# view/tabella -> colonna geometria, chiave primaria, nome visualizzato,
+# tipo WKB e SRID (sezione 4, passo 1).
+#
+# wkb_type/srid sono dichiarati qui esplicitamente e passati a
+# db_connector.postgis_uri(): senza, QGIS deve dedurli campionando i dati,
+# il che fallisce sia a subset SQL vuoto (nessuna riga per il cantiere
+# selezionato) sia -- caso di rilievo_geometria -- quando la colonna
+# contiene geometrie di tipo diverso tra loro (poligoni per gli strati,
+# linee per i tagli, punti per altre categorie: vedi config/styles/US.qml,
+# che infatti categorizza con simboli fill/line/marker mescolati).
+# Tutte le geometrie di Matrice sono in WGS84 (core/sync_handler.py,
+# core/gps_import.py, core/dem_sampler.py usano tutti EPSG:4326).
 LAYER_SOURCES = {
     "rilievo_geometria": {
         "source": "v_rilievo_geometria_qgis",
         "geometry_column": "geom",
         "key_column": "id_geom",
         "display_name": "Rilievo vettoriale",
+        "wkb_type": Qgis.WkbType.Unknown,  # tipi misti: poligoni/linee/punti
+        "srid": 4326,
     },
     "rilievo_quota": {
         "source": "rilievo_quota",
         "geometry_column": "geom",
         "key_column": "id",
         "display_name": "Quote",
+        "wkb_type": Qgis.WkbType.Point,
+        "srid": 4326,
     },
     "carotaggio": {
         "source": "v_carotaggio_qgis",
         "geometry_column": "geom",
         "key_column": "id",
         "display_name": "Carotaggi",
+        "wkb_type": Qgis.WkbType.Point,
+        "srid": 4326,
     },
     "colonna_stratigrafica": {
         "source": "v_colonna_stratigrafica_qgis",
         "geometry_column": "geom",
         "key_column": "id",
         "display_name": "Colonne stratigrafiche",
+        "wkb_type": Qgis.WkbType.Point,
+        "srid": 4326,
     },
     "sezione_prospetto": {
         "source": "v_sezione_prospetto_qgis",
         "geometry_column": "geom",
         "key_column": "id",
         "display_name": "Sezioni e prospetti",
+        "wkb_type": Qgis.WkbType.Point,
+        "srid": 4326,
     },
 }
 
@@ -61,7 +82,11 @@ class LayerManager:
         layers = {}
         for key, opts in LAYER_SOURCES.items():
             uri = self.connection.postgis_uri(
-                opts["source"], geometry_column=opts["geometry_column"], key_column=opts["key_column"]
+                opts["source"],
+                geometry_column=opts["geometry_column"],
+                key_column=opts["key_column"],
+                wkb_type=opts["wkb_type"],
+                srid=opts["srid"],
             )
             # cantiere_id e' un uuid, non un intero: va quotato nel subset SQL.
             uri.setSql(f"cantiere_id = '{cantiere_id}'")

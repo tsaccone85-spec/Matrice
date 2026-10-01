@@ -81,14 +81,27 @@ class MatriceConnection:
                 raise ConnectionError(str(exc)) from exc
         return self._conn
 
-    def postgis_uri(self, table, geometry_column="geom", key_column="id"):
-        """URI per caricare un layer PostGIS nativo in QGIS (sezione 4, passo 1)."""
+    def postgis_uri(self, table, geometry_column="geom", key_column="id", wkb_type=None, srid=None):
+        """
+        URI per caricare un layer PostGIS nativo in QGIS (sezione 4, passo 1).
+
+        wkb_type/srid vanno sempre passati esplicitamente da layer_manager.py:
+        senza, QGIS deve dedurli campionando i dati, il che fallisce sia
+        quando il subset SQL (filtro cantiere_id) restituisce zero righe,
+        sia quando la colonna contiene geometrie di tipo diverso tra loro
+        (es. rilievo_geometria: poligoni, linee e punti nella stessa
+        colonna `geom`, a seconda della categoria disegnata).
+        """
         params = self._connection_params()
         from qgis.core import QgsDataSourceUri
 
         uri = QgsDataSourceUri()
         uri.setConnection(params["host"], str(params["port"]), params["dbname"], params["user"], params["password"])
         uri.setDataSource("public", table, geometry_column, "", key_column)
+        if wkb_type is not None:
+            uri.setWkbType(wkb_type)
+        if srid is not None:
+            uri.setSrid(str(srid))
         return uri
 
     # ------------------------------------------------------------------
