@@ -83,13 +83,31 @@ class SupabaseRestClient:
         except _HttpError as exc:
             raise SupabaseRequestError(self._messaggio_semplice(exc)) from exc
 
+    def update(self, table, id_column, record_id, fields, access_token):
+        """
+        PATCH su /rest/v1/<table>?<id_column>=eq.<record_id> con il token
+        dell'utente loggato: come select(), e' la Row Level Security del
+        database (has_cantiere_access_editor) a decidere se la scrittura e'
+        permessa, non il plugin. Ritorna la riga aggiornata.
+        """
+        url = f"{self.base_url}/rest/v1/{table}?{id_column}=eq.{record_id}"
+        try:
+            rows = self._request(
+                "PATCH", url, body=fields, access_token=access_token, prefer="return=representation"
+            )
+        except _HttpError as exc:
+            raise SupabaseRequestError(self._messaggio_semplice(exc)) from exc
+        return rows[0] if rows else None
+
     # ------------------------------------------------------------------
-    def _request(self, method, url, body=None, access_token=None):
+    def _request(self, method, url, body=None, access_token=None, prefer=None):
         headers = {
             "apikey": self.anon_key,
             "Authorization": f"Bearer {access_token or self.anon_key}",
             "Content-Type": "application/json",
         }
+        if prefer:
+            headers["Prefer"] = prefer
         data = json.dumps(body).encode("utf-8") if body is not None else None
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:

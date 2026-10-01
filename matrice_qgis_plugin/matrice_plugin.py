@@ -9,7 +9,7 @@ plugin PyQGIS").
 
 import os
 
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import QEvent, QObject, Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QDockWidget
 
@@ -28,8 +28,28 @@ from .ui.main_dock_widget import MainDockWidget
 from .ui.login_dialog import LoginDialog
 from .ui.connection_settings_dialog import ConnectionSettingsDialog
 from .ui.gps_import_dialog import GpsImportDialog
+from .ui.us_detail_dialog import UsDetailDialog
 
 PLUGIN_DIR = os.path.dirname(__file__)
+
+
+class _DoubleClickFilter(QObject):
+    """
+    installEventFilter() richiede un vero QObject: MatricePlugin non lo e'
+    (e non conviene farlo diventare tale solo per questo), quindi il
+    doppio click sulla canvas passa da questo piccolo oggetto dedicato,
+    che si limita a inoltrare l'evento a una callback qualunque.
+    """
+
+    def __init__(self, callback, parent=None):
+        super().__init__(parent)
+        self._callback = callback
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonDblClick:
+            if self._callback():
+                return True
+        return False
 
 
 class MatricePlugin:
@@ -116,10 +136,17 @@ class MatricePlugin:
         self.dock_widget.quick_view_requested.connect(self.handle_quick_view)
         self.dock_widget.gps_import_requested.connect(self.handle_gps_import)
         self.dock_widget.layer_visibility_toggled.connect(self.handle_toggle_layer_visibility)
+
+        # Scheda US completa (doppio click su un elemento gia' selezionato
+        # del layer "Rilievo vettoriale"): niente strumento mappa dedicato,
+        # si intercetta il doppio click sulla canvas con un event filter.
+        self._double_click_filter = _DoubleClickFilter(self._handle_canvas_double_click)
+        self.iface.mapCanvas().viewport().installEventFilter(self._double_click_filter)
         self.dock_widget.populate_quick_views(self.quick_view_manager.available_views())
 
     def unload(self):
         """Chiamato da QGIS alla disattivazione: rimuove toolbar e dock."""
+        self.iface.mapCanvas().viewport().removeEventFilter(self._double_click_filter)
         for action in self.actions:
             self.iface.removePluginMenu("&Matrice", action)
             self.toolbar.removeAction(action)
@@ -285,6 +312,34 @@ class MatricePlugin:
                     self._apply_us_style(layer)
         else:
             self.layer_manager.hide_layer(cantiere_id, key)
+
+    def _handle_canvas_double_click(self):
+        """
+        Callback di _DoubleClickFilter: apre la scheda US completa se e'
+        selezionato esattamente un elemento del layer "Rilievo vettoriale"
+        del cantiere corrente. Ritorna True se ha gestito il doppio click
+        (per farlo consumare dall'event filter), False altrimenti -- cosi'
+        gli strumenti di selezione/editing normali di QGIS restano invariati
+        in ogni altro caso.
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            return False
+        rilievo = self.layer_manager.current_layers(cantiere_id).get("rilievo_geometria")
+        if rilievo is None:
+            return False
+        selezionate = rilievo.selectedFeatures()
+        if len(selezionate) != 1:
+            return False
+        self._apri_scheda_us(selezionate[0]["us_id"])
+        return True
+
+    def _apri_scheda_us(self, us_id):
+        if not us_id:
+            self._show_warning("Questo elemento non e' collegato a nessuna US.")
+            return
+        dialog = UsDetailDialog(self.matrice_api, self.session, us_id, self.iface.mainWindow())
+        dialog.exec_()
 
     def handle_quick_view(self, cantiere_id, view_key):
         """Sezione 6: applica in un solo clic filtro + stile di una vista rapida."""

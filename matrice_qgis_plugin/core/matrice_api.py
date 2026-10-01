@@ -104,3 +104,41 @@ class MatriceApi:
                 }
             )
         return risultato
+
+    # ------------------------------------------------------------------
+    # Scheda US completa (doppio click su un elemento selezionato in
+    # mappa): lettura e scrittura dei campi descrittivi, sempre via
+    # PostgREST con il token dell'utente -- la Row Level Security
+    # (has_cantiere_access/has_cantiere_access_editor, le stesse di tutto
+    # il resto del plugin) decide se la riga e' leggibile/scrivibile.
+    # ------------------------------------------------------------------
+    def get_us(self, us_id, access_token):
+        rows = self.rest.select("us", access_token, params={"id": f"eq.{us_id}"})
+        return rows[0] if rows else None
+
+    def update_us(self, us_id, campi, access_token):
+        return self.rest.update("us", "id", us_id, campi, access_token)
+
+    def list_reperti(self, us_id, access_token):
+        return self.rest.select(
+            "reperto",
+            access_token,
+            params={"us_id": f"eq.{us_id}", "order": "numero_reperto"},
+        ) or []
+
+    def update_reperto(self, reperto_id, campi, access_token):
+        return self.rest.update("reperto", "id", reperto_id, campi, access_token)
+
+    def get_sepoltura(self, sepoltura_id, access_token):
+        rows = self.rest.select("sepoltura", access_token, params={"id": f"eq.{sepoltura_id}"})
+        return rows[0] if rows else None
+
+    def update_sepoltura(self, sepoltura_id, campi, access_token):
+        return self.rest.update("sepoltura", "id", sepoltura_id, campi, access_token)
+
+    def list_foto_scavo(self, us_id, access_token):
+        return self.rest.select(
+            "foto_scavo",
+            access_token,
+            params={"us_id": f"eq.{us_id}", "order": "numero_progressivo"},
+        ) or []

@@ -4,10 +4,12 @@ Classi Python corrispondenti alle entita' del modello dati REALE di Matrice
 trasferimento tra i moduli core/ e l'interfaccia utente -- non un ORM
 completo in questa versione MVP.
 
-NOTA (principio "elenco", vedi nota utente in sezione 3/4): in QGIS non
-serve mai la scheda US completa. Le classi US/Sepoltura/Reperto qui sotto
-rappresentano volutamente solo l'elenco leggero usato per l'associazione
-(id + pochi campi identificativi), non l'intera anagrafica di Matrice.
+NOTA (principio "elenco" iniziale, vedi nota utente in sezione 3/4): le
+classi US/Sepoltura/Reperto qui sotto restano l'elenco leggero usato per
+l'associazione (id + pochi campi identificativi), non l'intera anagrafica
+di Matrice -- quella e' stata aggiunta in seguito in ui/us_detail_dialog.py
+(scheda US completa su doppio click), che pero' lavora su dict grezzi da
+PostgREST, non su queste dataclass.
 
 Valori ammessi per `definizione` (equivalente del vecchio "tipo_us" mai
 esistito in produzione): allineati alla terminologia di cantiere. Elenco
