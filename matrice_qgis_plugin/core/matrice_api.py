@@ -60,6 +60,27 @@ class MatriceApi:
         )
         return rows[0]["regione"] if rows else None
 
+    def get_localizzazione_cantiere(self, cantiere_id, access_token):
+        """
+        Punto di localizzazione dell'intervento (lat/lng) ed eventuale area
+        gia' disegnata (area_geom_wkt, testo WKT -- Matrice non ha una vera
+        colonna geometry per il cantiere, vedi core/localizzazione_manager.py).
+        """
+        rows = self.rest.select(
+            "cantiere", access_token, params={"id": f"eq.{cantiere_id}", "select": "lat,lng,area_geom_wkt"}
+        )
+        return rows[0] if rows else None
+
+    def update_area_intervento(self, cantiere_id, wkt, access_token):
+        """
+        Scrive l'area disegnata in QGIS su cantiere.area_geom_wkt (campo di
+        solo testo). La policy RLS di scrittura su cantiere richiede il
+        ruolo "referente" sulla stessa azienda: un operatore senza quel
+        ruolo ricevera' un errore di permessi chiaro, non e' un bug del
+        plugin.
+        """
+        return self.rest.update("cantiere", "id", cantiere_id, {"area_geom_wkt": wkt}, access_token)
+
     def list_fasi(self, cantiere_id, access_token):
         """
         NOTA: come in db_connector.py, `fase` e' un campo testuale libero

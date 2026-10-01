@@ -101,6 +101,16 @@
     </widget>
    </item>
    <item>
+    <widget class="QPushButton" name="salvaAreaButton">
+     <property name="text">
+      <string>Salva area intervento su Matrice</string>
+     </property>
+     <property name="toolTip">
+      <string>Scrive su Matrice il poligono disegnato nel layer "Area intervento (disegno)".</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QPushButton" name="logoutButton">
      <property name="text">
       <string>Esci</string>

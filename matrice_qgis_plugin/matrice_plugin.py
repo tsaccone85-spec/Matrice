@@ -23,6 +23,7 @@ from .core.db_connector import MatriceConnection
 from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
 from .core.layer_manager import LAYER_SOURCES, LayerManager
+from .core.localizzazione_manager import LocalizzazioneManager
 from .core.matrice_api import MatriceApi
 from .core.point_position_sync import PointPositionSyncHandler
 from .core.sync_handler import SyncHandler
@@ -76,6 +77,7 @@ class MatricePlugin:
         self.matrice_api = MatriceApi(self.session)
         self.layer_manager = LayerManager(self.connection)
         self.basemap_manager = BasemapManager()
+        self.localizzazione_manager = LocalizzazioneManager()
         self.style_manager = StyleManager()
         self.quick_view_manager = QuickViewManager(
             config_path=os.path.join(PLUGIN_DIR, "config", "quick_views.json"),
@@ -155,6 +157,7 @@ class MatricePlugin:
         self.dock_widget.quick_view_requested.connect(self.handle_quick_view)
         self.dock_widget.gps_import_requested.connect(self.handle_gps_import)
         self.dock_widget.layer_visibility_toggled.connect(self.handle_toggle_layer_visibility)
+        self.dock_widget.salva_area_requested.connect(self.handle_salva_area)
 
         # Scheda US completa (doppio click su un elemento gia' selezionato
         # del layer "Rilievo vettoriale"): niente strumento mappa dedicato,
@@ -298,6 +301,22 @@ class MatricePlugin:
         try:
             regione = self.matrice_api.get_regione_cantiere(cantiere_id, self.session.access_token)
             self.basemap_manager.ensure_ctr_per_regione(regione)
+        except Exception:
+            pass
+
+        # Localizzazione dell'intervento (punto gia' registrato su Matrice)
+        # e layer di disegno per l'area, precaricato con quella gia' salvata
+        # se presente -- mai bloccante, Matrice gestisce solo punti per il
+        # cantiere, non tutti ne hanno uno impostato.
+        try:
+            localizzazione = self.matrice_api.get_localizzazione_cantiere(cantiere_id, self.session.access_token)
+            if localizzazione is not None:
+                self.localizzazione_manager.mostra_punto(
+                    cantiere_id, nome_cantiere, localizzazione.get("lat"), localizzazione.get("lng")
+                )
+                self.localizzazione_manager.layer_area(
+                    cantiere_id, nome_cantiere, localizzazione.get("area_geom_wkt")
+                )
         except Exception:
             pass
 
@@ -465,6 +484,27 @@ class MatricePlugin:
         """
         dialog = GpsImportDialog(self.iface.mainWindow(), self.gps_importer, cantiere_id)
         dialog.exec_()
+
+    def handle_salva_area(self, cantiere_id):
+        """
+        Scrive su Matrice (cantiere.area_geom_wkt) il poligono disegnato nel
+        layer "Area intervento (disegno)". Richiede il ruolo "referente"
+        (RLS cantiere_update): un operatore senza quel ruolo vede un
+        messaggio di permessi chiaro, non un errore tecnico grezzo.
+        """
+        wkt = self.localizzazione_manager.wkt_corrente(cantiere_id)
+        if wkt is None:
+            self._show_warning(
+                'Nessuna area disegnata: attivare l\'editing sul layer "Area intervento (disegno)" '
+                "e disegnare un poligono prima di salvare."
+            )
+            return
+        try:
+            self.matrice_api.update_area_intervento(cantiere_id, wkt, self.session.access_token)
+        except Exception as exc:
+            self._show_warning(str(exc))
+            return
+        self.iface.messageBar().pushSuccess("Matrice", "Area dell'intervento salvata.")
 
     def _show_warning(self, message):
         """Avviso non bloccante in linguaggio semplice (es. quota non ricalcolata: DEM mancante)."""
