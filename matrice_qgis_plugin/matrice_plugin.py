@@ -12,7 +12,7 @@ import os
 import configparser
 
 from qgis.core import QgsFeatureRequest, QgsProject, QgsRectangle
-from qgis.gui import QgsMapTool
+from qgis.gui import QgsMapTool, QgsMapToolIdentifyAction
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QDockWidget, QMessageBox
@@ -39,12 +39,13 @@ from .ui.us_detail_dialog import UsDetailDialog
 PLUGIN_DIR = os.path.dirname(__file__)
 
 
-class _DoubleClickFilter(QObject):
+class _CanvasClickFilter(QObject):
     """
     installEventFilter() richiede un vero QObject: MatricePlugin non lo e'
-    (e non conviene farlo diventare tale solo per questo), quindi il
-    doppio click sulla canvas passa da questo piccolo oggetto dedicato,
-    che si limita a inoltrare l'evento a una callback qualunque.
+    (e non conviene farlo diventare tale solo per questo), quindi i click
+    sulla canvas passano da questo piccolo oggetto dedicato, che si limita
+    a inoltrare l'evento (doppio click, o click singolo a bottone
+    rilasciato) a una callback qualunque.
     """
 
     def __init__(self, callback, parent=None):
@@ -52,7 +53,7 @@ class _DoubleClickFilter(QObject):
         self._callback = callback
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.MouseButtonDblClick:
+        if event.type() in (QEvent.MouseButtonDblClick, QEvent.MouseButtonRelease):
             if self._callback(event):
                 return True
         return False
@@ -162,8 +163,8 @@ class MatricePlugin:
         # Scheda US completa (doppio click su un elemento gia' selezionato
         # del layer "Rilievo vettoriale"): niente strumento mappa dedicato,
         # si intercetta il doppio click sulla canvas con un event filter.
-        self._double_click_filter = _DoubleClickFilter(self._handle_canvas_double_click)
-        self.iface.mapCanvas().viewport().installEventFilter(self._double_click_filter)
+        self._canvas_click_filter = _CanvasClickFilter(self._handle_canvas_click)
+        self.iface.mapCanvas().viewport().installEventFilter(self._canvas_click_filter)
         self.dock_widget.populate_quick_views(self.quick_view_manager.available_views())
 
         # Pannello "US attive" (sezione 8): ha senso solo mentre si lavora
@@ -174,7 +175,7 @@ class MatricePlugin:
     def unload(self):
         """Chiamato da QGIS alla disattivazione: rimuove toolbar e dock."""
         self.iface.currentLayerChanged.disconnect(self._handle_active_layer_changed)
-        self.iface.mapCanvas().viewport().removeEventFilter(self._double_click_filter)
+        self.iface.mapCanvas().viewport().removeEventFilter(self._canvas_click_filter)
         for action in self.actions:
             self.iface.removePluginMenu("&Matrice", action)
             self.toolbar.removeAction(action)
@@ -393,21 +394,37 @@ class MatricePlugin:
         else:
             self.layer_manager.hide_layer(cantiere_id, key)
 
-    def _handle_canvas_double_click(self, event):
+    def _handle_canvas_click(self, event):
         """
-        Callback di _DoubleClickFilter: apre la scheda di dettaglio
-        dell'elemento sotto il punto cliccato, su uno dei layer collegati
-        a una scheda (Rilievo vettoriale -> scheda US, Colonne
-        stratigrafiche/Carotaggi -> propria scheda) del cantiere corrente
-        -- un solo doppio click diretto, non serve selezionare l'elemento
-        prima. Ritorna True se ha trovato ed aperto qualcosa (per farlo
-        consumare dall'event filter), False altrimenti -- cosi' gli
-        strumenti normali di QGIS (es. zoom con doppio click) restano
-        invariati quando il click non cade su nessun elemento di questi
-        layer. Se il punto cade su piu' elementi/layer contemporaneamente,
-        ha la precedenza il layer attivo in quel momento nel pannello
-        Livelli.
+        Callback di _CanvasClickFilter: apre la scheda di dettaglio
+        dell'elemento sotto il punto cliccato, su uno dei layer collegati a
+        una scheda (Rilievo vettoriale -> scheda US, Colonne
+        stratigrafiche/Carotaggi -> propria scheda) del cantiere corrente.
+
+        Due modi per attivarla:
+        - doppio click diretto, sempre, qualunque sia lo strumento attivo;
+        - click singolo, ma solo quando lo strumento attivo e' "Identifica
+          elementi" di QGIS -- cosi' la nostra scheda (editabile, con
+          anteprime foto) sostituisce il pannello nativo "Informazioni
+          Risultati" per questi layer, senza toccare in nessun modo
+          editing/selezione/altri strumenti.
+
+        Ritorna True se ha trovato ed aperto qualcosa (per farlo consumare
+        dall'event filter, cosi' il pannello nativo non si apre a sua
+        volta per lo stesso click), False altrimenti -- in quel caso gli
+        strumenti normali di QGIS (identifica su altri layer, zoom con
+        doppio click, ecc.) restano invariati. Se il punto cade su piu'
+        elementi/layer contemporaneamente, ha la precedenza il layer
+        attivo in quel momento nel pannello Livelli.
         """
+        e_doppio_click = event.type() == QEvent.MouseButtonDblClick
+        if not e_doppio_click:
+            if event.button() != Qt.LeftButton:
+                return False
+            strumento_attivo = self.iface.mapCanvas().mapTool()
+            if not isinstance(strumento_attivo, QgsMapToolIdentifyAction):
+                return False  # click singolo con un altro strumento: non e' affar nostro
+
         cantiere_id = self.session.cantiere_corrente_id
         if not cantiere_id:
             return False
