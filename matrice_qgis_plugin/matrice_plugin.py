@@ -283,6 +283,15 @@ class MatricePlugin:
         self.session.cantiere_corrente_id = cantiere_id
         layers, has_data = self.layer_manager.load_cantiere(cantiere_id, nome_cantiere)
 
+        # Sfondo CTR della Regione del cantiere (core/basemap_manager.py),
+        # se nota e raggiungibile -- mai bloccante: se la lettura della
+        # regione o il servizio WMS falliscono, resta il satellite.
+        try:
+            regione = self.matrice_api.get_regione_cantiere(cantiere_id, self.session.access_token)
+            self.basemap_manager.ensure_ctr_per_regione(regione)
+        except Exception:
+            pass
+
         for key, layer in layers.items():
             if has_data[key]:
                 self._watch_layer_sync(key, layer, cantiere_id)

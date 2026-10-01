@@ -53,6 +53,13 @@ class MatriceApi:
         cantieri.sort(key=lambda c: (c["nome_cantiere"] or "").lower())
         return cantieri
 
+    def get_regione_cantiere(self, cantiere_id, access_token):
+        """Regione del cantiere (sfondo CTR regionale, core/basemap_manager.py), o None se non impostata."""
+        rows = self.rest.select(
+            "cantiere", access_token, params={"id": f"eq.{cantiere_id}", "select": "regione"}
+        )
+        return rows[0]["regione"] if rows else None
+
     def list_fasi(self, cantiere_id, access_token):
         """
         NOTA: come in db_connector.py, `fase` e' un campo testuale libero
