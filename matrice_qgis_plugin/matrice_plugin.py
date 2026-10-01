@@ -161,8 +161,14 @@ class MatricePlugin:
         self.iface.mapCanvas().viewport().installEventFilter(self._double_click_filter)
         self.dock_widget.populate_quick_views(self.quick_view_manager.available_views())
 
+        # Pannello "US attive" (sezione 8): ha senso solo mentre si lavora
+        # sul layer "Rilievo vettoriale" -- nascosto quando e' attivo un
+        # altro layer (vedi _handle_active_layer_changed).
+        self.iface.currentLayerChanged.connect(self._handle_active_layer_changed)
+
     def unload(self):
         """Chiamato da QGIS alla disattivazione: rimuove toolbar e dock."""
+        self.iface.currentLayerChanged.disconnect(self._handle_active_layer_changed)
         self.iface.mapCanvas().viewport().removeEventFilter(self._double_click_filter)
         for action in self.actions:
             self.iface.removePluginMenu("&Matrice", action)
@@ -312,6 +318,22 @@ class MatricePlugin:
         # (vedi handle_toggle_layer_visibility).
         if has_data.get("rilievo_geometria"):
             self._apply_us_style(layers["rilievo_geometria"])
+
+        # Stato iniziale del pannello "US attive" per questo cantiere (il
+        # layer attivo in QGIS potrebbe non essere cambiato dall'apertura
+        # della tavola precedente, quindi currentLayerChanged non scatta da
+        # solo -- va valutato subito anche qui).
+        self._handle_active_layer_changed(self.iface.activeLayer())
+
+    def _handle_active_layer_changed(self, layer):
+        """
+        "US attive" ha senso solo mentre si lavora sul layer "Rilievo
+        vettoriale" (sezione 8): mostrato/nascosto in base al layer
+        attivato dall'operatore nel pannello Livelli di QGIS.
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        rilievo = self.layer_manager.current_layers(cantiere_id).get("rilievo_geometria") if cantiere_id else None
+        self.dock_widget.set_us_attive_visibile(layer is not None and rilievo is not None and layer.id() == rilievo.id())
 
     def _watch_layer_sync(self, key, layer, cantiere_id):
         """Aggancia il layer appena mostrato in mappa al percorso di sincronizzazione giusto (sezione 5)."""

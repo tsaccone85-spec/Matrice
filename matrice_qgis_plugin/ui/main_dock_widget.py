@@ -59,6 +59,16 @@ class MainDockWidget(QDockWidget):
             item.setCheckState(Qt.Checked)
             list_widget.addItem(item)
 
+    def set_us_attive_visibile(self, visibile):
+        """
+        "US attive" ha senso solo mentre si lavora sul layer "Rilievo
+        vettoriale" (e' l'elenco per l'associazione geometria-US, sezione
+        8): nascosto quando e' attivo un altro layer, per non confondere
+        l'operatore con un pannello che in quel momento non significa nulla.
+        """
+        self._content.usAttiveLabel.setVisible(visibile)
+        self._content.usAttiveListWidget.setVisible(visibile)
+
     def populate_us_attive(self, us_rows):
         """
         us_rows: [{"id", "numero_us", "definizione", "fase", "attiva",
@@ -124,6 +134,7 @@ class MainDockWidget(QDockWidget):
         self._content.cantiereCombo.clear()
         self._content.fasiListWidget.clear()
         self._content.usAttiveListWidget.clear()
+        self.set_us_attive_visibile(False)
         self._content.layerToggleListWidget.clear()
         self._cantiere_corrente_id = None
         self._content.errorLabel.setText("")
