@@ -11,6 +11,8 @@ import os
 
 import configparser
 
+from qgis.core import QgsFeatureRequest, QgsProject, QgsRectangle
+from qgis.gui import QgsMapTool
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QDockWidget, QMessageBox
@@ -50,7 +52,7 @@ class _DoubleClickFilter(QObject):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonDblClick:
-            if self._callback():
+            if self._callback(event):
                 return True
         return False
 
@@ -372,23 +374,34 @@ class MatricePlugin:
         else:
             self.layer_manager.hide_layer(cantiere_id, key)
 
-    def _handle_canvas_double_click(self):
+    def _handle_canvas_double_click(self, event):
         """
-        Callback di _DoubleClickFilter: apre la scheda di dettaglio se e'
-        selezionato esattamente un elemento di uno dei layer collegati a
-        una scheda (Rilievo vettoriale -> scheda US, Colonne
-        stratigrafiche/Carotaggi -> propria scheda) del cantiere corrente.
-        Ritorna True se ha gestito il doppio click (per farlo consumare
-        dall'event filter), False altrimenti -- cosi' gli strumenti di
-        selezione/editing normali di QGIS restano invariati in ogni altro
-        caso. Se piu' layer hanno una selezione residua, ha la precedenza
-        quello attivo in quel momento nel pannello Livelli.
+        Callback di _DoubleClickFilter: apre la scheda di dettaglio
+        dell'elemento sotto il punto cliccato, su uno dei layer collegati
+        a una scheda (Rilievo vettoriale -> scheda US, Colonne
+        stratigrafiche/Carotaggi -> propria scheda) del cantiere corrente
+        -- un solo doppio click diretto, non serve selezionare l'elemento
+        prima. Ritorna True se ha trovato ed aperto qualcosa (per farlo
+        consumare dall'event filter), False altrimenti -- cosi' gli
+        strumenti normali di QGIS (es. zoom con doppio click) restano
+        invariati quando il click non cade su nessun elemento di questi
+        layer. Se il punto cade su piu' elementi/layer contemporaneamente,
+        ha la precedenza il layer attivo in quel momento nel pannello
+        Livelli.
         """
         cantiere_id = self.session.cantiere_corrente_id
         if not cantiere_id:
             return False
         layers = self.layer_manager.current_layers(cantiere_id)
         layer_attivo = self.iface.activeLayer()
+
+        canvas = self.iface.mapCanvas()
+        punto_mappa = canvas.getCoordinateTransform().toMapCoordinates(event.pos())
+        raggio = QgsMapTool.searchRadiusMU(canvas)
+        rettangolo = QgsRectangle(
+            punto_mappa.x() - raggio, punto_mappa.y() - raggio,
+            punto_mappa.x() + raggio, punto_mappa.y() + raggio,
+        )
 
         candidati = (
             ("rilievo_geometria", self._apri_scheda_us, "us_id"),
@@ -399,11 +412,11 @@ class MatricePlugin:
 
         for chiave, apri, campo_id in candidati:
             layer = layers.get(chiave)
-            if layer is None:
-                continue
-            selezionate = layer.selectedFeatures()
-            if len(selezionate) == 1:
-                apri(selezionate[0][campo_id])
+            if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+                continue  # non costruito, o non attualmente in mappa (vedi LayerManager.hide_layer)
+            feature = next(layer.getFeatures(QgsFeatureRequest().setFilterRect(rettangolo)), None)
+            if feature is not None:
+                apri(feature[campo_id])
                 return True
         return False
 
