@@ -11,16 +11,17 @@ qui a file locali invece che al database.
 A cosa si abbina un punto dipende da `entita` (scelta dall'operatore nel
 dialogo, sezione 4): per i punti naturalmente legati a una unita'
 stratigrafica (rilievo vettoriale/quote), il codice del punto e' il
-numero US. Colonne stratigrafiche e carotaggi NON hanno nessun legame con
-una US: ogni punto va abbinato alla singola colonna/carotaggio con lo
-stesso numero, e se quella colonna/quel carotaggio aveva gia' una
+numero US. Colonne stratigrafiche, carotaggi e sezioni/prospetti NON
+hanno nessun legame con una US: ogni punto va abbinato al singolo
+elemento con lo stesso numero, e se quell'elemento aveva gia' una
 posizione, l'importazione la sostituisce (QGIS sovrascrive Matrice).
 
 Un rilievo GPS differenziale porta sempre anche la quota del punto (non
-solo x/y): per colonna_stratigrafica/carotaggio viene scritta direttamente
-in quota_slm insieme a lat/lng, invece di lasciarla al ricalcolo dal DEM
-(core/point_position_sync.py, che si applica solo quando il punto viene
-spostato a mano in QGIS, non quando arriva gia' da un'importazione GPS).
+solo x/y): per colonna_stratigrafica/carotaggio/sezione_prospetto viene
+scritta direttamente in quota_slm insieme a lat/lng, invece di lasciarla
+al ricalcolo dal DEM (core/point_position_sync.py, che si applica solo
+quando il punto viene spostato a mano in QGIS, non quando arriva gia' da
+un'importazione GPS).
 """
 
 import csv
@@ -28,6 +29,7 @@ import csv
 ENTITA_US = "us"
 ENTITA_COLONNA = "colonna_stratigrafica"
 ENTITA_CAROTAGGIO = "carotaggio"
+ENTITA_SEZIONE = "sezione_prospetto"
 
 # Nomi di colonna/campo in cui cercare la quota, in ordine di preferenza.
 # "ele" e' il nome standard del campo elevazione nei waypoint GPX letti da
@@ -229,8 +231,9 @@ class GpsImporter:
         convenzione di etichettatura di cantiere: se il cantiere ne usa
         una diversa, l'abbinamento automatico produce piu' "unmatched" e
         l'operatore corregge a mano prima di confermare); per colonne
-        stratigrafiche e carotaggi e' invece il loro numero proprio --
-        non esiste nessun legame con una US per questi due casi.
+        stratigrafiche, carotaggi e sezioni/prospetti e' invece il loro
+        numero proprio -- non esiste nessun legame con una US per questi
+        tre casi.
         """
         token = self.session.access_token
         if entita == ENTITA_COLONNA:
@@ -239,6 +242,9 @@ class GpsImporter:
         if entita == ENTITA_CAROTAGGIO:
             righe = self.matrice_api.list_carotaggi(cantiere_id, token)
             return {str(r["numero_carotaggio"]): r["id"] for r in righe}
+        if entita == ENTITA_SEZIONE:
+            righe = self.matrice_api.list_sezioni(cantiere_id, token)
+            return {str(r["numero_sezione"]): r["id"] for r in righe}
         righe = self.matrice_api.list_us(cantiere_id, token, solo_attive=False)
         return {str(r["numero_us"]): r["id"] for r in righe}
 
@@ -249,17 +255,19 @@ class GpsImporter:
         - entita="us": aggiorna la geometria del punto di rilievo
           vettoriale gia' legato a quella US (percorso storico, per i
           punti naturalmente associati a una unita' stratigrafica).
-        - entita="colonna_stratigrafica"/"carotaggio": sovrascrive
-          lat/lng (e quota_slm, se il file la riportava) della singola
-          colonna/carotaggio con lo stesso numero. Non c'e' nessun legame
-          con una US: se la colonna/il carotaggio aveva gia' una
-          posizione, viene sostituita. Se il punto non aveva una quota
-          leggibile, quota_slm non viene toccata (mai sovrascritta con un
+        - entita="colonna_stratigrafica"/"carotaggio"/"sezione_prospetto":
+          sovrascrive lat/lng (e quota_slm, se il file la riportava) del
+          singolo elemento con lo stesso numero. Non c'e' nessun legame
+          con una US: se l'elemento aveva gia' una posizione, viene
+          sostituita. Se il punto non aveva una quota leggibile, quota_slm
+          non viene toccata (mai sovrascritta con un
           valore vuoto).
         """
-        tabella_punto_diretto = {ENTITA_COLONNA: "colonna_stratigrafica", ENTITA_CAROTAGGIO: "carotaggio"}.get(
-            entita
-        )
+        tabella_punto_diretto = {
+            ENTITA_COLONNA: "colonna_stratigrafica",
+            ENTITA_CAROTAGGIO: "carotaggio",
+            ENTITA_SEZIONE: "sezione_prospetto",
+        }.get(entita)
         for match in matches:
             if tabella_punto_diretto:
                 quota = match.get("quota")

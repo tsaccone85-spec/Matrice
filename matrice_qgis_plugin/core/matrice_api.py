@@ -184,6 +184,13 @@ class MatriceApi:
             params={"select": "id,numero_carotaggio", "cantiere_id": f"eq.{cantiere_id}"},
         ) or []
 
+    def list_sezioni(self, cantiere_id, access_token):
+        return self.rest.select(
+            "sezione_prospetto",
+            access_token,
+            params={"select": "id,numero_sezione", "cantiere_id": f"eq.{cantiere_id}"},
+        ) or []
+
     # ------------------------------------------------------------------
     # Scheda colonna stratigrafica / carotaggio completa
     # (ui/punto_dettaglio_dialog.py, doppio click su un elemento

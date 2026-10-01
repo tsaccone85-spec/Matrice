@@ -19,7 +19,7 @@ import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QListWidgetItem, QTableWidgetItem
 
-from ..core.gps_import import ENTITA_CAROTAGGIO, ENTITA_COLONNA, ENTITA_US
+from ..core.gps_import import ENTITA_CAROTAGGIO, ENTITA_COLONNA, ENTITA_SEZIONE, ENTITA_US
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "gps_import_dialog.ui"))
 
@@ -28,13 +28,15 @@ CAMPO_CODICE_DEFAULT = {"shp": "codice", "dxf": "Text"}
 ETICHETTA_FORMATO = {"csv": "CSV", "gpx": "GPX (waypoint)", "shp": "Shapefile", "dxf": "DXF"}
 
 # Etichetta mostrata nel menu "Abbinare i punti a" -> valore di `entita`
-# passato a core/gps_import.py. Colonne stratigrafiche e carotaggi NON
-# hanno nessun legame con una US: il codice del punto e' il loro numero
-# proprio, non il numero US (vedi gps_import._codici_cantiere).
+# passato a core/gps_import.py. Colonne stratigrafiche, carotaggi e
+# sezioni/prospetti NON hanno nessun legame con una US: il codice del
+# punto e' il loro numero proprio, non il numero US (vedi
+# gps_import._codici_cantiere).
 OPZIONI_ENTITA = (
     ("US (rilievo vettoriale / quote)", ENTITA_US),
     ("Colonna stratigrafica", ENTITA_COLONNA),
     ("Carotaggio", ENTITA_CAROTAGGIO),
+    ("Sezione/prospetto", ENTITA_SEZIONE),
 )
 
 
