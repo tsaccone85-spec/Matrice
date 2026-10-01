@@ -14,7 +14,7 @@ espongono un campo `geom` calcolato e traducono le modifiche di posizione
 in scritture su lat/lng tramite trigger lato database.
 """
 
-from qgis.core import Qgis, QgsProject, QgsVectorLayer
+from qgis.core import Qgis, QgsEditorWidgetSetup, QgsProject, QgsVectorLayer
 
 # view/tabella -> colonna geometria, chiave primaria, nome visualizzato,
 # tipo WKB e SRID (sezione 4, passo 1).
@@ -31,6 +31,13 @@ from qgis.core import Qgis, QgsProject, QgsVectorLayer
 # rilevanti per rilievo_geometria.
 # Tutte le geometrie di Matrice sono in WGS84 (core/sync_handler.py,
 # core/gps_import.py, core/dem_sampler.py usano tutti EPSG:4326).
+#
+# campi_nascosti: colonne uuid tecniche (chiavi, riferimenti ad altre
+# tabelle) che non interessano in tabella attributi/identifica elemento --
+# cantiere_id e' escluso ovunque perche' ridondante (un layer corrisponde
+# sempre a un solo cantiere alla volta, gia' nel titolo del layer, non
+# serve ripeterlo su ogni riga). espressione_display e' cosa mostra QGIS
+# come "nome" di ogni elemento (identifica, etichette) al posto dell'id.
 LAYER_SOURCES = {
     "rilievo_geometria": {
         "source": "v_rilievo_geometria_qgis",
@@ -39,6 +46,8 @@ LAYER_SOURCES = {
         "display_name": "Rilievo vettoriale",
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
+        "campi_nascosti": ("id_geom", "cantiere_id", "us_id", "operatore_id", "sepoltura_id"),
+        "espressione_display": "'US ' || \"numero_us\"",
     },
     "rilievo_quota": {
         "source": "rilievo_quota",
@@ -47,6 +56,8 @@ LAYER_SOURCES = {
         "display_name": "Quote",
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "us_id", "operatore_id", "created_by"),
+        "espressione_display": "\"tipo_quota\" || ' ' || \"valore_quota\"",
     },
     "carotaggio": {
         "source": "v_carotaggio_qgis",
@@ -55,6 +66,8 @@ LAYER_SOURCES = {
         "display_name": "Carotaggi",
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "'Carotaggio ' || \"numero_carotaggio\"",
     },
     "colonna_stratigrafica": {
         "source": "v_colonna_stratigrafica_qgis",
@@ -63,6 +76,8 @@ LAYER_SOURCES = {
         "display_name": "Colonne stratigrafiche",
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "'Colonna ' || \"numero_colonna\"",
     },
     "sezione_prospetto": {
         "source": "v_sezione_prospetto_qgis",
@@ -71,6 +86,8 @@ LAYER_SOURCES = {
         "display_name": "Sezioni e prospetti",
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "origine_ocr_id"),
+        "espressione_display": "'Sezione ' || \"numero_sezione\"",
     },
 }
 
@@ -79,6 +96,7 @@ class LayerManager:
     def __init__(self, connection):
         self.connection = connection
         self._layers_by_cantiere = {}
+        self._nome_by_cantiere = {}
 
     def _build_layer(self, cantiere_id, key):
         """Costruisce (senza aggiungere in mappa) il layer PostGIS per `key`."""
@@ -92,12 +110,40 @@ class LayerManager:
         )
         # cantiere_id e' un uuid, non un intero: va quotato nel subset SQL.
         uri.setSql(f"cantiere_id = '{cantiere_id}'")
-        layer = QgsVectorLayer(uri.uri(False), f"{opts['display_name']} - cantiere {cantiere_id}", "postgres")
+        # Nome cantiere nel titolo del layer (se noto) invece del suo uuid,
+        # molto piu' leggibile nel pannello Livelli.
+        nome_cantiere = self._nome_by_cantiere.get(cantiere_id, cantiere_id)
+        layer = QgsVectorLayer(uri.uri(False), f"{opts['display_name']} - {nome_cantiere}", "postgres")
         if not layer.isValid():
             raise RuntimeError(f"Impossibile caricare il layer '{key}' da Matrice.")
+        self._applica_presentazione(layer, opts)
         return layer
 
-    def load_cantiere(self, cantiere_id):
+    def _applica_presentazione(self, layer, opts):
+        """
+        Nasconde le colonne uuid tecniche da tabella attributi e form di
+        identificazione, e imposta l'espressione che QGIS usa come "nome"
+        di ogni elemento (identifica, etichette) al posto dell'id.
+        """
+        campi_nascosti = opts.get("campi_nascosti", ())
+        config = layer.attributeTableConfig()
+        colonne = config.columns()
+        for colonna in colonne:
+            if colonna.name in campi_nascosti:
+                colonna.hidden = True
+        config.setColumns(colonne)
+        layer.setAttributeTableConfig(config)
+
+        for nome_campo in campi_nascosti:
+            indice = layer.fields().indexFromName(nome_campo)
+            if indice != -1:
+                layer.setEditorWidgetSetup(indice, QgsEditorWidgetSetup("Hidden", {}))
+
+        espressione_display = opts.get("espressione_display")
+        if espressione_display:
+            layer.setDisplayExpression(espressione_display)
+
+    def load_cantiere(self, cantiere_id, nome_cantiere=None):
         """
         Carica (o ricarica) i layer del cantiere selezionato (sezione 4,
         passo 1). Per non affollare la mappa di livelli vuoti al primo
@@ -112,6 +158,9 @@ class LayerManager:
         (anche per quelli non ancora aggiunti in mappa), has_data dice se
         all'apertura aveva gia' righe (quindi e' stato aggiunto subito).
         """
+        if nome_cantiere:
+            self._nome_by_cantiere[cantiere_id] = nome_cantiere
+
         layers = {}
         has_data = {}
         for key in LAYER_SOURCES:

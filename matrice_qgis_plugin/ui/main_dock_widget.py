@@ -16,7 +16,7 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_doc
 
 class MainDockWidget(QDockWidget):
     logout_requested = pyqtSignal()
-    cantiere_selected = pyqtSignal(str)  # cantiere.id e' uuid, non intero
+    cantiere_selected = pyqtSignal(str, str)  # cantiere.id (uuid), nome_cantiere
     quick_view_requested = pyqtSignal(str, str)
     gps_import_requested = pyqtSignal(str)  # cantiere.id del rilievo aperto
     layer_visibility_toggled = pyqtSignal(str, str, bool)  # cantiere_id, layer_key, mostra/nascondi
@@ -133,7 +133,7 @@ class MainDockWidget(QDockWidget):
         combo = self._content.cantiereCombo
         cantiere_id = combo.currentData()
         if cantiere_id is not None:
-            self.cantiere_selected.emit(cantiere_id)
+            self.cantiere_selected.emit(cantiere_id, combo.currentText())
 
     def _on_apply_quick_view(self):
         cantiere_id = self._content.cantiereCombo.currentData()

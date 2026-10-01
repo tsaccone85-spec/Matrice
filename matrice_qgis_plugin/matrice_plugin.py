@@ -235,7 +235,7 @@ class MatricePlugin:
         self.session.logout()
         self.dock_widget.reset()
 
-    def handle_open_tavola(self, cantiere_id):
+    def handle_open_tavola(self, cantiere_id, nome_cantiere=None):
         """
         Sezione 4, passo 1: apertura tavola -> layer PostGIS nativi filtrati
         sul cantiere.
@@ -254,7 +254,7 @@ class MatricePlugin:
         manuale vince, altrimenti ricalcolo dal DEM".
         """
         self.session.cantiere_corrente_id = cantiere_id
-        layers, has_data = self.layer_manager.load_cantiere(cantiere_id)
+        layers, has_data = self.layer_manager.load_cantiere(cantiere_id, nome_cantiere)
 
         for key, layer in layers.items():
             if has_data[key]:
