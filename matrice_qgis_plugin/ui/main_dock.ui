@@ -18,7 +18,7 @@
      <item>
       <widget class="QPushButton" name="apriTavolaButton">
        <property name="text">
-        <string>Apri tavola di scavo</string>
+        <string>Visualizza dati intervento</string>
        </property>
       </widget>
      </item>
