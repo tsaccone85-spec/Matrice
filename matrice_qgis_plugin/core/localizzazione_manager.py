@@ -68,6 +68,38 @@ class LocalizzazioneManager:
         self._layer_area_per_cantiere[cantiere_id] = layer
         return layer
 
+    def layer_area_esiste(self, cantiere_id):
+        """True se il layer di disegno e' gia' stato creato e risulta ancora nel progetto."""
+        layer = self._layer_area_per_cantiere.get(cantiere_id)
+        return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
+
+    def is_area_visibile(self, cantiere_id):
+        """
+        Stato della spunta di visibilita' del layer nel pannello Livelli di
+        QGIS (non se il layer esiste: un layer presente ma con la spunta
+        tolta conta come non visibile).
+        """
+        layer = self._layer_area_per_cantiere.get(cantiere_id)
+        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+            return False
+        nodo = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
+        return nodo is not None and nodo.isVisible()
+
+    def set_area_visibile(self, cantiere_id, visibile):
+        """
+        Spunta/toglie la visibilita' del layer di disegno dal pannello
+        Livelli di QGIS -- MAI lo rimuove dal progetto (a differenza di
+        LayerManager.hide_layer per i layer PostGIS): un'area disegnata ma
+        non ancora salvata su Matrice andrebbe persa se il layer venisse
+        distrutto solo per nasconderlo.
+        """
+        layer = self._layer_area_per_cantiere.get(cantiere_id)
+        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+            return
+        nodo = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
+        if nodo is not None:
+            nodo.setItemVisibilityChecked(visibile)
+
     def wkt_corrente(self, cantiere_id):
         """
         WKT della (prima) geometria presente nel layer di disegno del

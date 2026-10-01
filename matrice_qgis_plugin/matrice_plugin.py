@@ -326,6 +326,13 @@ class MatricePlugin:
                 self._watch_layer_sync(key, layer, cantiere_id)
 
         layer_states = [(key, opts["display_name"], has_data[key]) for key, opts in LAYER_SOURCES.items()]
+        # "Area intervento" non e' un layer PostGIS come gli altri (vedi
+        # core/localizzazione_manager.py): la spunta qui riflette/controlla
+        # solo la visibilita' del layer di disegno, che esiste gia' se la
+        # lettura della localizzazione qui sopra e' andata a buon fine.
+        layer_states.append(
+            ("area_intervento", "Area intervento", self.localizzazione_manager.is_area_visibile(cantiere_id))
+        )
         self.dock_widget.populate_layer_toggles(cantiere_id, layer_states)
 
         fasi_rows = self.matrice_api.list_fasi(cantiere_id, self.session.access_token)
@@ -385,6 +392,10 @@ class MatricePlugin:
         livelli senza dati, non caricati automaticamente da
         handle_open_tavola).
         """
+        if key == "area_intervento":
+            self._handle_toggle_area_intervento(cantiere_id, checked)
+            return
+
         if checked:
             layer, era_gia_visibile = self.layer_manager.show_layer(cantiere_id, key)
             if not era_gia_visibile:
@@ -393,6 +404,27 @@ class MatricePlugin:
                     self._apply_us_style(layer)
         else:
             self.layer_manager.hide_layer(cantiere_id, key)
+
+    def _handle_toggle_area_intervento(self, cantiere_id, checked):
+        """
+        "Area intervento" non e' un layer PostGIS: non va mai distrutto per
+        nasconderlo (si perderebbe un'eventuale area disegnata ma non
+        ancora salvata, vedi core/localizzazione_manager.py) -- la spunta
+        agisce solo sulla visibilita' nel pannello Livelli.
+        """
+        if not self.localizzazione_manager.layer_area_esiste(cantiere_id):
+            if not checked:
+                return  # niente da nascondere
+            try:
+                localizzazione = self.matrice_api.get_localizzazione_cantiere(cantiere_id, self.session.access_token)
+            except Exception as exc:
+                self._show_warning(str(exc))
+                return
+            nome_cantiere = self.layer_manager.nome_cantiere(cantiere_id) or cantiere_id
+            wkt_esistente = localizzazione.get("area_geom_wkt") if localizzazione else None
+            self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, wkt_esistente)
+        else:
+            self.localizzazione_manager.set_area_visibile(cantiere_id, checked)
 
     def _handle_canvas_click(self, event):
         """

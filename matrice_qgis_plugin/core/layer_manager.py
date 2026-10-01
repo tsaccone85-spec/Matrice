@@ -101,6 +101,10 @@ class LayerManager:
         self._layers_by_cantiere = {}
         self._nome_by_cantiere = {}
 
+    def nome_cantiere(self, cantiere_id):
+        """Nome del cantiere passato all'ultimo load_cantiere() per questo id, o None se non noto."""
+        return self._nome_by_cantiere.get(cantiere_id)
+
     def _build_layer(self, cantiere_id, key):
         """Costruisce (senza aggiungere in mappa) il layer PostGIS per `key`."""
         opts = LAYER_SOURCES[key]
