@@ -142,7 +142,11 @@ class BasemapManager:
     def ensure_default_basemaps(self):
         """Sfondi nazionali, indipendenti dal cantiere: chiamati una volta dopo il login."""
         self.ensure_satellite()
-        self.ensure_catasto()
+        # Catasto (ensure_catasto) tolto su richiesta: non si vedeva --
+        # l'endpoint o il layer scoperto da GetCapabilities non erano
+        # giusti per questo servizio. Il metodo resta disponibile per
+        # quando si trovera' il problema, ma non viene piu' chiamato
+        # automaticamente.
 
     def ensure_satellite(self):
         self._ensure_raster_layer(SATELLITE_NAME, SATELLITE_URI, "wms")
