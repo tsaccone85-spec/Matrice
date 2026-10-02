@@ -253,7 +253,14 @@ class MatricePlugin:
         self.toolbar.setVisible(False)
         # Sfondi satellite/CTR (sezione ...): aggiunti una sola volta a
         # sessione QGIS, non duplicati se gia' presenti (BasemapManager).
-        self.basemap_manager.ensure_default_basemaps()
+        # Google -> Esri in automatico se Google non e' raggiungibile; un
+        # avviso esplicito solo se falliscono entrambi, invece di lasciare
+        # l'operatore senza sfondo satellitare e senza nessun riscontro.
+        if not self.basemap_manager.ensure_default_basemaps():
+            self._show_warning(
+                "Impossibile caricare lo sfondo satellitare (Google e Esri entrambi non raggiungibili): "
+                "verificare la connessione Internet."
+            )
 
     def _show_connection_settings(self):
         """

@@ -12,8 +12,14 @@ Maps (mt0.google.com/vt/lyrs=s) senza passare dalla Google Maps Platform
 (nessuna API key, nessuna fatturazione) -- e' la stessa pratica diffusa in
 tutta la comunita' QGIS, ma NON e' un uso autorizzato dai Termini di
 Servizio di Google: Google puo' bloccare o rallentare l'accesso senza
-preavviso. Se in futuro lo sfondo smette di caricarsi, e' la prima cosa da
-sospettare.
+preavviso. Successo esattamente questo (segnalato da un operatore dopo un
+aggiornamento del plugin, nessuna modifica di questo file c'entrava):
+ensure_satellite() ora prova prima Google e, solo se il layer risulta
+tecnicamente non valido (non raggiungibile), passa in automatico a Esri
+World Imagery (il provider usato prima di questo cambio, vedi commit
+"Satellite automatico: Google al posto di Esri World Imagery") -- cosi'
+l'operatore ha comunque uno sfondo satellitare anche quando Google blocca
+l'accesso, invece di restare senza sfondo e senza nessun avviso.
 
 Catasto e CTR regionale sono invece veri servizi WMS di enti pubblici
 (Agenzia delle Entrate, Regioni). Gli URL qui sotto vengono dalla ricerca
@@ -52,6 +58,15 @@ SATELLITE_NAME = "Satellite (Google)"
 SATELLITE_URI = (
     "type=xyz&url=https://mt0.google.com/vt/lyrs%3Ds%26x%3D%7Bx%7D%26y%3D%7By%7D%26z%3D%7Bz%7D"
     "&zmax=20&zmin=0"
+)
+
+# Ripiego automatico se Google non e' raggiungibile (vedi nota sopra): stesso
+# provider usato da questo plugin prima del cambio a Google, nessun problema
+# di Termini di Servizio noto.
+SATELLITE_FALLBACK_NAME = "Satellite (Esri World Imagery)"
+SATELLITE_FALLBACK_URI = (
+    "type=xyz&url=https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/"
+    "MapServer/tile/%7Bz%7D/%7By%7D/%7Bx%7D&zmax=19&zmin=0"
 )
 
 CATASTO_NAME = "Catasto (Agenzia delle Entrate)"
@@ -140,16 +155,35 @@ class BasemapManager:
     """Aggiunge gli sfondi una sola volta per sessione QGIS (non duplica se gia' presenti)."""
 
     def ensure_default_basemaps(self):
-        """Sfondi nazionali, indipendenti dal cantiere: chiamati una volta dopo il login."""
-        self.ensure_satellite()
+        """
+        Sfondi nazionali, indipendenti dal cantiere: chiamati una volta dopo
+        il login. Ritorna True se almeno uno sfondo satellitare (Google o,
+        in ripiego, Esri) e' risultato disponibile -- il chiamante decide se
+        avvisare l'operatore quando anche il ripiego fallisce (es. nessuna
+        connessione Internet), invece di lasciarlo senza sfondo e senza
+        nessun avviso.
+        """
         # Catasto (ensure_catasto) tolto su richiesta: non si vedeva --
         # l'endpoint o il layer scoperto da GetCapabilities non erano
         # giusti per questo servizio. Il metodo resta disponibile per
         # quando si trovera' il problema, ma non viene piu' chiamato
         # automaticamente.
+        return self.ensure_satellite()
 
     def ensure_satellite(self):
-        self._ensure_raster_layer(SATELLITE_NAME, SATELLITE_URI, "wms")
+        """
+        Prova prima Google (il satellite preferito, vedi nota del modulo);
+        se il servizio non e' raggiungibile (QgsRasterLayer non valido, es.
+        Google ha bloccato l'accesso) passa automaticamente a Esri World
+        Imagery. Ritorna True se uno dei due e' risultato disponibile
+        (o era gia' presente), False solo se entrambi falliscono.
+        """
+        project = QgsProject.instance()
+        if project.mapLayersByName(SATELLITE_NAME) or project.mapLayersByName(SATELLITE_FALLBACK_NAME):
+            return True  # uno dei due gia' presente, non duplicare ne' ritentare l'altro
+        if self._ensure_raster_layer(SATELLITE_NAME, SATELLITE_URI, "wms"):
+            return True
+        return self._ensure_raster_layer(SATELLITE_FALLBACK_NAME, SATELLITE_FALLBACK_URI, "wms")
 
     def ensure_catasto(self):
         self._ensure_wms_scoperto(CATASTO_NAME, CATASTO_WMS_BASE_URL, CATASTO_PAROLA_CHIAVE)
@@ -181,7 +215,7 @@ class BasemapManager:
         for layer in project.mapLayers().values():
             if layer.name().startswith("CTR - "):
                 return layer
-        layers = project.mapLayersByName(SATELLITE_NAME)
+        layers = project.mapLayersByName(SATELLITE_NAME) or project.mapLayersByName(SATELLITE_FALLBACK_NAME)
         return layers[0] if layers else None
 
     def _ensure_wms_scoperto(self, nome, url_base, parola_chiave):
@@ -196,9 +230,12 @@ class BasemapManager:
         self._ensure_raster_layer(nome, uri, "wms")
 
     def _ensure_raster_layer(self, name, uri, provider):
+        """Ritorna True se il layer e' (gia' o ora) presente e valido, False se non si e' potuto aggiungere."""
         project = QgsProject.instance()
         if project.mapLayersByName(name):
-            return  # gia' presente, non duplicare
+            return True  # gia' presente, non duplicare
         layer = QgsRasterLayer(uri, name, provider)
-        if layer.isValid():
-            project.addMapLayer(layer)
+        if not layer.isValid():
+            return False
+        project.addMapLayer(layer)
+        return True
