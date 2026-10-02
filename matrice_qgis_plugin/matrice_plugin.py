@@ -348,6 +348,12 @@ class MatricePlugin:
         if has_data.get("rilievo_geometria"):
             self._apply_us_style(layers["rilievo_geometria"])
 
+        # Colore fisso per esito (rosso/verde) delle colonne stratigrafiche,
+        # sempre applicato appena il layer compare in mappa -- non solo
+        # scegliendo una vista rapida (sezione 6).
+        if has_data.get("colonna_stratigrafica"):
+            self.style_manager.apply_esito_style(layers["colonna_stratigrafica"])
+
         # Stato iniziale del pannello "US attive" per questo cantiere (il
         # layer attivo in QGIS potrebbe non essere cambiato dall'apertura
         # della tavola precedente, quindi currentLayerChanged non scatta da
@@ -363,6 +369,22 @@ class MatricePlugin:
         cantiere_id = self.session.cantiere_corrente_id
         rilievo = self.layer_manager.current_layers(cantiere_id).get("rilievo_geometria") if cantiere_id else None
         self.dock_widget.set_us_attive_visibile(layer is not None and rilievo is not None and layer.id() == rilievo.id())
+
+        # Viste rapide legate a un layer specifico (oggi: le 3 viste
+        # sull'esito delle colonne stratigrafiche) compaiono nel menu solo
+        # mentre quel layer e' quello attivo in QGIS -- stesso principio di
+        # "US attive" sopra, applicato al menu delle viste rapide.
+        chiave_attiva = self._chiave_layer_attivo(cantiere_id, layer)
+        self.dock_widget.populate_quick_views(self.quick_view_manager.available_views(chiave_attiva))
+
+    def _chiave_layer_attivo(self, cantiere_id, layer):
+        """Chiave in LAYER_SOURCES del layer QGIS attivo, o None se non e' uno dei layer di Matrice."""
+        if cantiere_id is None or layer is None:
+            return None
+        for key, candidato in self.layer_manager.current_layers(cantiere_id).items():
+            if candidato.id() == layer.id():
+                return key
+        return None
 
     def _watch_layer_sync(self, key, layer, cantiere_id):
         """Aggancia il layer appena mostrato in mappa al percorso di sincronizzazione giusto (sezione 5)."""
@@ -402,6 +424,8 @@ class MatricePlugin:
                 self._watch_layer_sync(key, layer, cantiere_id)
                 if key == "rilievo_geometria":
                     self._apply_us_style(layer)
+                elif key == "colonna_stratigrafica":
+                    self.style_manager.apply_esito_style(layer)
         else:
             self.layer_manager.hide_layer(cantiere_id, key)
 

@@ -48,6 +48,37 @@ class StyleManager:
             raise RuntimeError(message)
         layer.triggerRepaint()
 
+    # Colori fissi (non casuali) per l'esito delle colonne stratigrafiche:
+    # stesso significato in tutto il plugin, sia nello stile di base che
+    # nelle viste rapide dedicate (core/quick_views.py), quindi definiti
+    # una sola volta qui.
+    COLORE_ESITO_POSITIVO = "#d32f2f"  # evidenza_rilevata
+    COLORE_ESITO_NEGATIVO = "#388e3c"  # nessuna_evidenza
+
+    def apply_esito_style(self, layer):
+        """
+        Stile di base delle colonne stratigrafiche (sezione 6): rosso se e'
+        stata rilevata un'evidenza stratigrafica, verde se il sondaggio non
+        ne ha trovata nessuna -- applicato sempre, non solo scegliendo una
+        vista rapida, cosi' l'esito si legge a colpo d'occhio in mappa anche
+        prima di aprire il pannello Matrice.
+        """
+        from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory, QgsSymbol
+        from qgis.PyQt.QtGui import QColor
+
+        valori = (
+            ("evidenza_rilevata", "Esito positivo", self.COLORE_ESITO_POSITIVO),
+            ("nessuna_evidenza", "Esito negativo", self.COLORE_ESITO_NEGATIVO),
+        )
+        categories = []
+        for valore, etichetta, colore in valori:
+            symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            symbol.setColor(QColor(colore))
+            categories.append(QgsRendererCategory(valore, symbol, etichetta))
+
+        layer.setRenderer(QgsCategorizedSymbolRenderer("esito", categories))
+        layer.triggerRepaint()
+
     def apply_default_fase_style(self, layer, fasi):
         """
         Colore automatico per fase quando l'operatore non ha caricato un

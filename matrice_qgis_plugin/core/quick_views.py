@@ -28,9 +28,22 @@ class QuickViewManager:
         with open(self.config_path, encoding="utf-8") as f:
             return json.load(f)["viste_rapide"]
 
-    def available_views(self):
-        """Ritorna [(chiave, etichetta), ...] per popolare il menu a tendina del dock widget."""
-        return [(key, view["etichetta"]) for key, view in self._views.items()]
+    def available_views(self, layer_attivo=None):
+        """
+        Ritorna [(chiave, etichetta), ...] per popolare il menu a tendina del
+        dock widget. Le viste con "richiede_layer_attivo" impostato (oggi: le
+        3 viste sull'esito delle colonne stratigrafiche) compaiono solo
+        quando `layer_attivo` corrisponde -- cioe' solo mentre l'operatore
+        sta lavorando su quel layer in QGIS, per non proporre una vista che
+        in quel momento non avrebbe alcun elemento da mostrare.
+        """
+        risultato = []
+        for key, view in self._views.items():
+            richiede = view.get("richiede_layer_attivo")
+            if richiede and richiede != layer_attivo:
+                continue
+            risultato.append((key, view["etichetta"]))
+        return risultato
 
     def apply(self, view_key, layers, fasi=None):
         """
@@ -69,7 +82,7 @@ class QuickViewManager:
             qml_path = self._resolve_qml_path(view["stile_qml"])
             self.style_manager.load_qml(target, qml_path, known_fields)
         elif view.get("campo_simbologia"):
-            self._apply_categorized(target, view["campo_simbologia"], fasi)
+            self._apply_categorized(target, view["campo_simbologia"], fasi, view.get("colori_fissi"))
 
         target.triggerRepaint()
 
@@ -86,15 +99,20 @@ class QuickViewManager:
         layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
         layer.setLabelsEnabled(True)
 
-    def _apply_categorized(self, layer, field_name, valori_noti=None):
+    def _apply_categorized(self, layer, field_name, valori_noti=None, colori_fissi=None):
         """
-        Simbologia categorica di ripiego quando la vista rapida non ha uno
-        stile .qml dedicato (oggi: "Vista per fasi", campo `fase`): un
-        colore casuale ma sempre distinto per ogni valore del campo
-        indicato (StyleManager.random_distinct_colors), cosi' due fasi non
-        risultano mai dello stesso colore ne' facilmente confondibili.
+        Simbologia categorica quando la vista rapida non ha uno stile .qml
+        dedicato. Senza `colori_fissi` (oggi: "Vista per fasi", campo
+        `fase`) il colore e' casuale ma sempre distinto per ogni valore
+        (StyleManager.random_distinct_colors), cosi' due fasi non risultano
+        mai dello stesso colore ne' facilmente confondibili. Con
+        `colori_fissi` (oggi: le viste sull'esito delle colonne
+        stratigrafiche, campo `esito`) il colore e' invece sempre lo stesso
+        per ogni valore -- rosso/verde hanno un significato preciso
+        (positivo/negativo), non vanno assegnati a caso.
         """
         from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory, QgsSymbol
+        from qgis.PyQt.QtGui import QColor
 
         if valori_noti is not None:
             valori = sorted(v for v in valori_noti if v not in (None, ""))
@@ -102,9 +120,16 @@ class QuickViewManager:
             field_index = layer.fields().indexOf(field_name)
             valori = sorted(v for v in layer.uniqueValues(field_index) if v not in (None, ""))
 
-        colori = self.style_manager.random_distinct_colors(len(valori))
+        colori_fissi = colori_fissi or {}
+        da_assegnare = [v for v in valori if v not in colori_fissi]
+        colori_random = iter(self.style_manager.random_distinct_colors(len(da_assegnare)))
+
         categories = []
-        for valore, colore in zip(valori, colori):
+        for valore in valori:
+            if valore in colori_fissi:
+                colore = QColor(colori_fissi[valore])
+            else:
+                colore = next(colori_random)
             symbol = QgsSymbol.defaultSymbol(layer.geometryType())
             symbol.setColor(colore)
             categories.append(QgsRendererCategory(valore, symbol, str(valore)))
