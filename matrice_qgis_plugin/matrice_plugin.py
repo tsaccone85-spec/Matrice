@@ -348,11 +348,13 @@ class MatricePlugin:
         if has_data.get("rilievo_geometria"):
             self._apply_us_style(layers["rilievo_geometria"])
 
-        # Colore fisso per esito (rosso/verde) delle colonne stratigrafiche,
-        # sempre applicato appena il layer compare in mappa -- non solo
-        # scegliendo una vista rapida (sezione 6).
+        # Colore fisso per esito (rosso/verde) di colonne stratigrafiche e
+        # carotaggi, sempre applicato appena il layer compare in mappa -- non
+        # solo scegliendo una vista rapida (sezione 6).
         if has_data.get("colonna_stratigrafica"):
             self.style_manager.apply_esito_style(layers["colonna_stratigrafica"])
+        if has_data.get("carotaggio"):
+            self.style_manager.apply_esito_style(layers["carotaggio"])
 
         # Stato iniziale del pannello "US attive" per questo cantiere (il
         # layer attivo in QGIS potrebbe non essere cambiato dall'apertura
@@ -424,7 +426,7 @@ class MatricePlugin:
                 self._watch_layer_sync(key, layer, cantiere_id)
                 if key == "rilievo_geometria":
                     self._apply_us_style(layer)
-                elif key == "colonna_stratigrafica":
+                elif key in ("colonna_stratigrafica", "carotaggio"):
                     self.style_manager.apply_esito_style(layer)
         else:
             self.layer_manager.hide_layer(cantiere_id, key)
