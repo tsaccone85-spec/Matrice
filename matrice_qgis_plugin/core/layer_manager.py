@@ -14,7 +14,7 @@ espongono un campo `geom` calcolato e traducono le modifiche di posizione
 in scritture su lat/lng tramite trigger lato database.
 """
 
-from qgis.core import Qgis, QgsEditorWidgetSetup, QgsProject, QgsVectorLayer
+from qgis.core import Qgis, QgsEditorWidgetSetup, QgsMarkerSymbol, QgsProject, QgsSingleSymbolRenderer, QgsVectorLayer
 
 # view/tabella -> colonna geometria, chiave primaria, nome visualizzato,
 # tipo WKB e SRID (sezione 4, passo 1).
@@ -94,6 +94,14 @@ LAYER_SOURCES = {
     },
 }
 
+# Nei rilievi di dettaglio (1:50, 1:20) una sezione/prospetto si
+# rappresenta convenzionalmente come un tratto, non come un punto -- la
+# geometria resta un punto (serve solo a registrare la quota del piano
+# campagna in quel punto, quota_slm) ma il simbolo mostrato e' una linea.
+def _imposta_stile_sezione_prospetto(layer):
+    simbolo = QgsMarkerSymbol.createSimple({"name": "line", "size": "4", "color": "0,0,0,255"})
+    layer.setRenderer(QgsSingleSymbolRenderer(simbolo))
+
 
 class LayerManager:
     def __init__(self, connection):
@@ -124,6 +132,8 @@ class LayerManager:
         if not layer.isValid():
             raise RuntimeError(f"Impossibile caricare il layer '{key}' da Matrice.")
         self._applica_presentazione(layer, opts)
+        if key == "sezione_prospetto":
+            _imposta_stile_sezione_prospetto(layer)
         return layer
 
     def _applica_presentazione(self, layer, opts):
