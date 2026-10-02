@@ -305,34 +305,39 @@ class MatricePlugin:
         except Exception:
             pass
 
-        # Localizzazione dell'intervento (punto gia' registrato su Matrice)
-        # e layer di disegno per l'area, precaricato con quella gia' salvata
-        # se presente -- mai bloccante, Matrice gestisce solo punti per il
-        # cantiere, non tutti ne hanno uno impostato.
+        # Localizzazione dell'intervento (punto gia' registrato su Matrice) e
+        # area disegnata: due layer del tutto separati (vedi
+        # core/localizzazione_manager.py), ciascuno aggiunto subito in mappa
+        # solo se ha gia' un dato su Matrice -- stessa regola "solo i livelli
+        # con dati, gli altri a richiesta" degli altri livelli del cantiere
+        # (LayerManager.load_cantiere). Mai bloccante: Matrice non obbliga
+        # nessun cantiere ad avere ne' un punto ne' un'area registrati.
         try:
             localizzazione = self.matrice_api.get_localizzazione_cantiere(cantiere_id, self.session.access_token)
-            if localizzazione is not None:
-                self.localizzazione_manager.mostra_punto(
-                    cantiere_id, nome_cantiere, localizzazione.get("lat"), localizzazione.get("lng")
-                )
-                self.localizzazione_manager.layer_area(
-                    cantiere_id, nome_cantiere, localizzazione.get("area_geom_wkt")
-                )
         except Exception:
-            pass
+            localizzazione = None
+
+        ha_punto = bool(localizzazione and localizzazione.get("lat") is not None and localizzazione.get("lng") is not None)
+        ha_area = bool(localizzazione and localizzazione.get("area_geom_wkt"))
+        if ha_punto:
+            self.localizzazione_manager.layer_punto(
+                cantiere_id, nome_cantiere, localizzazione["lat"], localizzazione["lng"]
+            )
+        if ha_area:
+            self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione["area_geom_wkt"])
 
         for key, layer in layers.items():
             if has_data[key]:
                 self._watch_layer_sync(key, layer, cantiere_id)
 
         layer_states = [(key, opts["display_name"], has_data[key]) for key, opts in LAYER_SOURCES.items()]
-        # "Area intervento" non e' un layer PostGIS come gli altri (vedi
-        # core/localizzazione_manager.py): la spunta qui riflette/controlla
-        # solo la visibilita' del layer di disegno, che esiste gia' se la
-        # lettura della localizzazione qui sopra e' andata a buon fine.
-        layer_states.append(
-            ("area_intervento", "Area intervento", self.localizzazione_manager.is_area_visibile(cantiere_id))
-        )
+        # "Localizzazione di cantiere" e "Area di cantiere" non sono layer
+        # PostGIS come gli altri (vedi core/localizzazione_manager.py): due
+        # voci distinte, ciascuna spuntata solo se il relativo dato era gia'
+        # presente su Matrice all'apertura (coerente con ha_punto/ha_area
+        # appena calcolati, che hanno gia' deciso se crearli in mappa).
+        layer_states.append(("localizzazione_cantiere", "Localizzazione di cantiere", ha_punto))
+        layer_states.append(("area_intervento", "Area di cantiere", ha_area))
         self.dock_widget.populate_layer_toggles(cantiere_id, layer_states)
 
         fasi_rows = self.matrice_api.list_fasi(cantiere_id, self.session.access_token)
@@ -419,6 +424,9 @@ class MatricePlugin:
         if key == "area_intervento":
             self._handle_toggle_area_intervento(cantiere_id, checked)
             return
+        if key == "localizzazione_cantiere":
+            self._handle_toggle_localizzazione(cantiere_id, checked)
+            return
 
         if checked:
             layer, era_gia_visibile = self.layer_manager.show_layer(cantiere_id, key)
@@ -431,9 +439,23 @@ class MatricePlugin:
         else:
             self.layer_manager.hide_layer(cantiere_id, key)
 
+    def _ottieni_localizzazione(self, cantiere_id):
+        """
+        Lettura di cantiere.lat/lng/area_geom_wkt condivisa dai due toggle
+        qui sotto (punto e area): un eventuale errore (rete, permessi) va
+        mostrato all'operatore solo quando lo richiede esplicitamente
+        spuntando la voce, non quando viene gia' mostrata l'eventuale
+        presente, come fa handle_open_tavola.
+        """
+        try:
+            return self.matrice_api.get_localizzazione_cantiere(cantiere_id, self.session.access_token)
+        except Exception as exc:
+            self._show_warning(str(exc))
+            return None
+
     def _handle_toggle_area_intervento(self, cantiere_id, checked):
         """
-        "Area intervento" non e' un layer PostGIS: non va mai distrutto per
+        "Area di cantiere" non e' un layer PostGIS: non va mai distrutto per
         nasconderlo (si perderebbe un'eventuale area disegnata ma non
         ancora salvata, vedi core/localizzazione_manager.py) -- la spunta
         agisce solo sulla visibilita' nel pannello Livelli.
@@ -441,16 +463,32 @@ class MatricePlugin:
         if not self.localizzazione_manager.layer_area_esiste(cantiere_id):
             if not checked:
                 return  # niente da nascondere
-            try:
-                localizzazione = self.matrice_api.get_localizzazione_cantiere(cantiere_id, self.session.access_token)
-            except Exception as exc:
-                self._show_warning(str(exc))
+            localizzazione = self._ottieni_localizzazione(cantiere_id)
+            if localizzazione is None:
                 return
             nome_cantiere = self.layer_manager.nome_cantiere(cantiere_id) or cantiere_id
-            wkt_esistente = localizzazione.get("area_geom_wkt") if localizzazione else None
-            self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, wkt_esistente)
+            self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione.get("area_geom_wkt"))
         else:
             self.localizzazione_manager.set_area_visibile(cantiere_id, checked)
+
+    def _handle_toggle_localizzazione(self, cantiere_id, checked):
+        """
+        "Localizzazione di cantiere" (il punto, separato dall'area -- vedi
+        core/localizzazione_manager.py): stessa logica di
+        _handle_toggle_area_intervento, su un layer indipendente.
+        """
+        if not self.localizzazione_manager.layer_punto_esiste(cantiere_id):
+            if not checked:
+                return
+            localizzazione = self._ottieni_localizzazione(cantiere_id)
+            if localizzazione is None:
+                return
+            nome_cantiere = self.layer_manager.nome_cantiere(cantiere_id) or cantiere_id
+            self.localizzazione_manager.layer_punto(
+                cantiere_id, nome_cantiere, localizzazione.get("lat"), localizzazione.get("lng")
+            )
+        else:
+            self.localizzazione_manager.set_punto_visibile(cantiere_id, checked)
 
     def _handle_canvas_click(self, event):
         """

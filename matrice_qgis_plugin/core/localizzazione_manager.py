@@ -4,11 +4,13 @@ richiesta esplicita): Matrice registra per il cantiere solo un punto
 (cantiere.lat/lng), non un'area vera e propria -- il campo
 cantiere.area_geom_wkt e' testo semplice (WKT), non una colonna
 PostGIS/geometry. Per questo qui non si usano layer PostGIS nativi (come
-in core/layer_manager.py) ma due semplici layer "memory" di QGIS:
+in core/layer_manager.py) ma due layer "memory" di QGIS del tutto separati,
+ciascuno con la propria spunta nel pannello "Livelli del cantiere" (key
+"localizzazione_cantiere" e "area_intervento"):
 
-- "Localizzazione intervento": un punto di sola lettura, costruito da
+- "Localizzazione di cantiere": un punto di sola lettura, costruito da
   cantiere.lat/lng, solo per vedere dov'e' l'intervento in mappa.
-- "Area intervento (disegno)": un poligono disegnabile a mano con gli
+- "Area di cantiere (disegno)": un poligono disegnabile a mano con gli
   strumenti di editing normali di QGIS (Attiva editing -> Aggiungi
   elemento poligono), precaricato con l'area gia' salvata su Matrice se
   presente. Il salvataggio verso Matrice NON e' automatico (a differenza
@@ -16,40 +18,79 @@ in core/layer_manager.py) ma due semplici layer "memory" di QGIS:
   confermato esplicitamente dal pulsante dedicato nel pannello Matrice,
   stesso principio di "nessuna scrittura senza conferma esplicita" gia'
   seguito per l'importazione GPS.
+
+I due layer non hanno nessun legame tra loro (due QgsVectorLayer distinti,
+due voci distinte nel pannello): un operatore puo' mostrare l'uno senza
+l'altro, e nascondere l'uno non tocca mai l'altro.
 """
 
 from qgis.core import QgsFeature, QgsGeometry, QgsPointXY, QgsProject, QgsVectorLayer
 
-NOME_LAYER_PUNTO = "Localizzazione intervento"
-NOME_LAYER_AREA = "Area intervento (disegno)"
+NOME_LAYER_PUNTO = "Localizzazione di cantiere"
+NOME_LAYER_AREA = "Area di cantiere (disegno)"
 
 
 class LocalizzazioneManager:
     def __init__(self):
+        self._layer_punto_per_cantiere = {}
         self._layer_area_per_cantiere = {}
 
-    def mostra_punto(self, cantiere_id, nome_cantiere, lat, lng):
-        """Punto di sola lettura dalla posizione registrata su Matrice (cantiere.lat/lng)."""
-        if lat is None or lng is None:
-            return  # cantiere senza posizione registrata, niente da mostrare
-        nome = f"{NOME_LAYER_PUNTO} - {nome_cantiere}"
-        project = QgsProject.instance()
-        if project.mapLayersByName(nome):
-            return  # gia' presente, non duplicare
-        layer = QgsVectorLayer("Point?crs=EPSG:4326", nome, "memory")
-        feature = QgsFeature()
-        feature.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(lng, lat)))
-        layer.dataProvider().addFeature(feature)
-        layer.updateExtents()
-        project.addMapLayer(layer)
+    # ------------------------------------------------------------------
+    # "Localizzazione di cantiere" (punto, sola lettura)
+    # ------------------------------------------------------------------
+    def layer_punto(self, cantiere_id, nome_cantiere, lat, lng):
+        """
+        Ritorna il layer puntuale del cantiere, creandolo se non esiste
+        ancora -- un solo layer per cantiere per sessione QGIS, riusato se
+        gia' aperto. Senza lat/lng registrati su Matrice il layer viene
+        comunque creato, ma vuoto (nessun punto da mostrare).
+        """
+        layer_esistente = self._layer_punto_per_cantiere.get(cantiere_id)
+        if layer_esistente is not None and QgsProject.instance().mapLayer(layer_esistente.id()) is not None:
+            return layer_esistente
 
+        nome = f"{NOME_LAYER_PUNTO} - {nome_cantiere}"
+        layer = QgsVectorLayer("Point?crs=EPSG:4326", nome, "memory")
+        if lat is not None and lng is not None:
+            feature = QgsFeature()
+            feature.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(lng, lat)))
+            layer.dataProvider().addFeature(feature)
+            layer.updateExtents()
+        QgsProject.instance().addMapLayer(layer)
+        self._layer_punto_per_cantiere[cantiere_id] = layer
+        return layer
+
+    def layer_punto_esiste(self, cantiere_id):
+        """True se il layer del punto e' gia' stato creato e risulta ancora nel progetto."""
+        layer = self._layer_punto_per_cantiere.get(cantiere_id)
+        return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
+
+    def is_punto_visibile(self, cantiere_id):
+        layer = self._layer_punto_per_cantiere.get(cantiere_id)
+        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+            return False
+        nodo = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
+        return nodo is not None and nodo.isVisible()
+
+    def set_punto_visibile(self, cantiere_id, visibile):
+        """Spunta/toglie la visibilita' del punto -- MAI lo rimuove dal progetto (vedi set_area_visibile)."""
+        layer = self._layer_punto_per_cantiere.get(cantiere_id)
+        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+            return
+        nodo = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
+        if nodo is not None:
+            nodo.setItemVisibilityChecked(visibile)
+
+    # ------------------------------------------------------------------
+    # "Area di cantiere (disegno)" (poligono, disegnabile)
+    # ------------------------------------------------------------------
     def layer_area(self, cantiere_id, nome_cantiere, wkt_esistente):
         """
-        Ritorna il layer "Area intervento (disegno)" del cantiere, creandolo
-        se non esiste ancora -- precaricato con l'area gia' presente su
-        Matrice (cantiere.area_geom_wkt), se c'e'. Un solo layer per
-        cantiere per sessione QGIS, riusato se gia' aperto (non si perde
-        il disegno in corso se si riapre la stessa tavola).
+        Ritorna il layer "Area di cantiere (disegno)" del cantiere,
+        creandolo se non esiste ancora -- precaricato con l'area gia'
+        presente su Matrice (cantiere.area_geom_wkt), se c'e'. Un solo
+        layer per cantiere per sessione QGIS, riusato se gia' aperto (non si
+        perde il disegno in corso se si riapre la stessa tavola).
         """
         layer_esistente = self._layer_area_per_cantiere.get(cantiere_id)
         if layer_esistente is not None and QgsProject.instance().mapLayer(layer_esistente.id()) is not None:
