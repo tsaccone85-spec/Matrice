@@ -34,6 +34,11 @@ class LocalizzazioneManager:
     def __init__(self):
         self._layer_punto_per_cantiere = {}
         self._layer_area_per_cantiere = {}
+        # WKT con cui layer_area() e' stato creato per ciascun cantiere:
+        # confrontato con wkt_corrente() in remove_cantiere() per sapere se
+        # l'operatore ha disegnato/modificato l'area senza ancora salvarla
+        # su Matrice -- non si vuole scartarla in silenzio.
+        self._wkt_iniziale_per_cantiere = {}
 
     # ------------------------------------------------------------------
     # "Localizzazione di cantiere" (punto, sola lettura)
@@ -107,6 +112,7 @@ class LocalizzazioneManager:
                 layer.updateExtents()
         QgsProject.instance().addMapLayer(layer)
         self._layer_area_per_cantiere[cantiere_id] = layer
+        self._wkt_iniziale_per_cantiere[cantiere_id] = wkt_esistente
         return layer
 
     def layer_area_esiste(self, cantiere_id):
@@ -154,3 +160,27 @@ class LocalizzazioneManager:
         if feature is None or feature.geometry().isNull():
             return None
         return feature.geometry().asWkt()
+
+    def remove_cantiere(self, cantiere_id):
+        """
+        Rimuove dal progetto QGIS i due layer di localizzazione/area del
+        cantiere indicato (passaggio a un altro cantiere) -- a differenza di
+        set_punto_visibile/set_area_visibile, qui la rimozione e' voluta, non
+        solo un cambio di visibilita'.
+
+        Ritorna True se l'area aveva un disegno diverso da quello con cui il
+        layer era stato creato (quindi non ancora salvato su Matrice): il
+        chiamante decide se avvisare l'operatore prima di scartarlo.
+        """
+        wkt_iniziale = self._wkt_iniziale_per_cantiere.pop(cantiere_id, None)
+        area_non_salvata = self.layer_area_esiste(cantiere_id) and self.wkt_corrente(cantiere_id) != wkt_iniziale
+
+        layer_punto = self._layer_punto_per_cantiere.pop(cantiere_id, None)
+        if layer_punto is not None and QgsProject.instance().mapLayer(layer_punto.id()) is not None:
+            QgsProject.instance().removeMapLayer(layer_punto.id())
+
+        layer_area = self._layer_area_per_cantiere.pop(cantiere_id, None)
+        if layer_area is not None and QgsProject.instance().mapLayer(layer_area.id()) is not None:
+            QgsProject.instance().removeMapLayer(layer_area.id())
+
+        return area_non_salvata

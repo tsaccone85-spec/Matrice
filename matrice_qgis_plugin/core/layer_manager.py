@@ -208,6 +208,19 @@ class LayerManager:
         self._layers_by_cantiere.setdefault(cantiere_id, {})[key] = layer
         return layer, False
 
+    def remove_cantiere(self, cantiere_id):
+        """
+        Rimuove dal progetto QGIS tutti i layer del cantiere indicato
+        (passaggio a un altro cantiere, matrice_plugin._rimuovi_layer_cantiere):
+        a differenza di hide_layer, qui si tolgono anche i layer senza
+        spunta nel pannello, se per qualche motivo erano comunque finiti in
+        mappa.
+        """
+        layers = self._layers_by_cantiere.pop(cantiere_id, {})
+        for layer in layers.values():
+            if QgsProject.instance().mapLayer(layer.id()) is not None:
+                QgsProject.instance().removeMapLayer(layer.id())
+
     def hide_layer(self, cantiere_id, key):
         """Rimuove dalla mappa il livello `key` del cantiere (spunta tolta)."""
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)

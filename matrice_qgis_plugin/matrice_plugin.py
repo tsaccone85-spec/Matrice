@@ -298,6 +298,10 @@ class MatricePlugin:
         che passano da PointPositionSyncHandler per la regola "quota
         manuale vince, altrimenti ricalcolo dal DEM".
         """
+        cantiere_precedente = self.session.cantiere_corrente_id
+        if cantiere_precedente and cantiere_precedente != cantiere_id:
+            self._rimuovi_layer_cantiere(cantiere_precedente)
+
         self.session.cantiere_corrente_id = cantiere_id
         layers, has_data = self.layer_manager.load_cantiere(cantiere_id, nome_cantiere)
 
@@ -329,7 +333,9 @@ class MatricePlugin:
                 cantiere_id, nome_cantiere, localizzazione["lat"], localizzazione["lng"]
             )
         if ha_area:
-            self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione["area_geom_wkt"])
+            self._apply_area_style(
+                self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione["area_geom_wkt"])
+            )
 
         for key, layer in layers.items():
             if has_data[key]:
@@ -398,6 +404,31 @@ class MatricePlugin:
                 return key
         return None
 
+    def _rimuovi_layer_cantiere(self, cantiere_id):
+        """
+        Pulisce la mappa dai layer del cantiere lasciato quando si apre la
+        tavola di un cantiere diverso: mai due cantieri insieme in mappa,
+        per non confondere l'operatore su quale sia quello attivo. Riguarda
+        sia i layer PostGIS (LayerManager) sia i due layer di
+        localizzazione/area (LocalizzazioneManager) -- quest'ultimo avvisa
+        se c'era un'area disegnata ma non ancora salvata su Matrice, che va
+        persa con la rimozione.
+
+        disconnect_all() qui è sicuro: in questo plugin e' sempre aperta la
+        tavola di un solo cantiere per volta, quindi i layer attualmente
+        agganciati alla sincronizzazione sono sempre e solo quelli del
+        cantiere che si sta per rimuovere.
+        """
+        self.sync_handler.disconnect_all()
+        self.point_sync_handler.disconnect_all()
+        self.layer_manager.remove_cantiere(cantiere_id)
+        area_non_salvata = self.localizzazione_manager.remove_cantiere(cantiere_id)
+        if area_non_salvata:
+            self._show_warning(
+                "L'area di cantiere disegnata per il cantiere precedente non era stata salvata su Matrice: "
+                "e' stata scartata passando al nuovo cantiere."
+            )
+
     def _watch_layer_sync(self, key, layer, cantiere_id):
         """Aggancia il layer appena mostrato in mappa al percorso di sincronizzazione giusto (sezione 5)."""
         if key in LayerManager.POINT_SYNC_TABLES:
@@ -415,6 +446,16 @@ class MatricePlugin:
         try:
             self.style_manager.load_qml(
                 rilievo_layer, us_qml_path, known_fields=[f.name() for f in rilievo_layer.fields()]
+            )
+        except Exception as exc:  # StyleValidationError o RuntimeError di QGIS
+            self._show_warning(str(exc))
+
+    def _apply_area_style(self, area_layer):
+        """Stile fornito dall'operatore per "Area di cantiere (disegno)" (sezione 7), uguale per tutti."""
+        area_qml_path = os.path.join(PLUGIN_DIR, "config", "styles", "Area_di_cantiere.qml")
+        try:
+            self.style_manager.load_qml(
+                area_layer, area_qml_path, known_fields=[f.name() for f in area_layer.fields()]
             )
         except Exception as exc:  # StyleValidationError o RuntimeError di QGIS
             self._show_warning(str(exc))
@@ -472,7 +513,9 @@ class MatricePlugin:
             if localizzazione is None:
                 return
             nome_cantiere = self.layer_manager.nome_cantiere(cantiere_id) or cantiere_id
-            self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione.get("area_geom_wkt"))
+            self._apply_area_style(
+                self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione.get("area_geom_wkt"))
+            )
         else:
             self.localizzazione_manager.set_area_visibile(cantiere_id, checked)
 
@@ -665,6 +708,7 @@ class MatricePlugin:
 
         layer_punto = self.localizzazione_manager.layer_punto(cantiere_id, nome_cantiere, lat, lng)
         layer_area = self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione.get("area_geom_wkt"))
+        self._apply_area_style(layer_area)
         sfondo = self.basemap_manager.layer_sfondo_corrente()
         layers = [l for l in (layer_punto, layer_area, sfondo) if l is not None]
 
