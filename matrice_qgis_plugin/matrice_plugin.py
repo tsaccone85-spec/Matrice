@@ -11,11 +11,11 @@ import os
 
 import configparser
 
-from qgis.core import QgsFeatureRequest, QgsProject, QgsRectangle
+from qgis.core import QgsFeatureRequest, QgsGeometry, QgsProject, QgsRectangle
 from qgis.gui import QgsMapTool
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QDockWidget, QMessageBox
+from qgis.PyQt.QtWidgets import QAction, QDockWidget, QFileDialog, QMessageBox
 
 from .core.auth import SessionManager
 from .core.basemap_manager import BasemapManager
@@ -26,6 +26,7 @@ from .core.layer_manager import LAYER_SOURCES, LayerManager
 from .core.localizzazione_manager import LocalizzazioneManager
 from .core.matrice_api import MatriceApi
 from .core.point_position_sync import PointPositionSyncHandler
+from .core.print_layout_manager import PrintLayoutManager
 from .core.sync_handler import SyncHandler
 from .core.style_manager import StyleManager
 from .core.quick_views import QuickViewManager
@@ -79,6 +80,9 @@ class MatricePlugin:
         self.layer_manager = LayerManager(self.connection)
         self.basemap_manager = BasemapManager()
         self.localizzazione_manager = LocalizzazioneManager()
+        self.print_layout_manager = PrintLayoutManager(
+            os.path.join(PLUGIN_DIR, "config", "layouts", "localizzazione_1_200.qpt")
+        )
         self.style_manager = StyleManager()
         self.quick_view_manager = QuickViewManager(
             config_path=os.path.join(PLUGIN_DIR, "config", "quick_views.json"),
@@ -159,6 +163,7 @@ class MatricePlugin:
         self.dock_widget.gps_import_requested.connect(self.handle_gps_import)
         self.dock_widget.layer_visibility_toggled.connect(self.handle_toggle_layer_visibility)
         self.dock_widget.salva_area_requested.connect(self.handle_salva_area)
+        self.dock_widget.stampa_localizzazione_requested.connect(self.handle_stampa_localizzazione)
 
         # Scheda US completa (doppio click su un elemento gia' selezionato
         # del layer "Rilievo vettoriale"): niente strumento mappa dedicato,
@@ -614,7 +619,7 @@ class MatricePlugin:
         wkt = self.localizzazione_manager.wkt_corrente(cantiere_id)
         if wkt is None:
             self._show_warning(
-                'Nessuna area disegnata: attivare l\'editing sul layer "Area intervento (disegno)" '
+                'Nessuna area disegnata: attivare l\'editing sul layer "Area di cantiere (disegno)" '
                 "e disegnare un poligono prima di salvare."
             )
             return
@@ -624,6 +629,54 @@ class MatricePlugin:
             self._show_warning(str(exc))
             return
         self.iface.messageBar().pushSuccess("Matrice", "Area dell'intervento salvata.")
+
+    def handle_stampa_localizzazione(self, cantiere_id):
+        """
+        Esporta in PDF la tavola di localizzazione del cantiere a scala
+        1:200 (sezione 7): layout riusato se gia' creato in precedenza (vedi
+        PrintLayoutManager, eventuali personalizzazioni dell'operatore come
+        un logo restano), mappa centrata sul punto registrato su Matrice o,
+        in mancanza, sul centro dell'area disegnata.
+        """
+        localizzazione = self._ottieni_localizzazione(cantiere_id)
+        if localizzazione is None:
+            return
+
+        lat, lng = localizzazione.get("lat"), localizzazione.get("lng")
+        if lat is None or lng is None:
+            area_wkt = localizzazione.get("area_geom_wkt")
+            centro = QgsGeometry.fromWkt(area_wkt).centroid().asPoint() if area_wkt else None
+            if centro is None:
+                self._show_warning(
+                    "Questo cantiere non ha ne' una posizione ne' un'area registrata su Matrice: niente da stampare."
+                )
+                return
+            lat, lng = centro.y(), centro.x()
+
+        nome_cantiere = self.layer_manager.nome_cantiere(cantiere_id) or cantiere_id
+        percorso_pdf, _ = QFileDialog.getSaveFileName(
+            self.dock_widget,
+            "Esporta tavola di localizzazione",
+            f"{nome_cantiere} - Localizzazione.pdf",
+            "PDF (*.pdf)",
+        )
+        if not percorso_pdf:
+            return
+
+        layer_punto = self.localizzazione_manager.layer_punto(cantiere_id, nome_cantiere, lat, lng)
+        layer_area = self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione.get("area_geom_wkt"))
+        sfondo = self.basemap_manager.layer_sfondo_corrente()
+        layers = [l for l in (layer_punto, layer_area, sfondo) if l is not None]
+
+        layout = self.print_layout_manager.get_or_create_layout(nome_cantiere)
+        self.print_layout_manager.aggiorna_titolo(layout, nome_cantiere)
+        self.print_layout_manager.aggiorna_mappa(layout, layers, lat, lng)
+        try:
+            self.print_layout_manager.esporta_pdf(layout, percorso_pdf)
+        except Exception as exc:
+            self._show_warning(str(exc))
+            return
+        self.iface.messageBar().pushSuccess("Matrice", f"Tavola di localizzazione esportata in {percorso_pdf}.")
 
     def _show_warning(self, message):
         """Avviso non bloccante in linguaggio semplice (es. quota non ricalcolata: DEM mancante)."""

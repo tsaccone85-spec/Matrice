@@ -169,6 +169,21 @@ class BasemapManager:
             return
         self._ensure_wms_scoperto(f"CTR - {regione}", url_base, CTR_PAROLA_CHIAVE)
 
+    def layer_sfondo_corrente(self):
+        """
+        Sfondo da usare nella tavola di stampa (core/print_layout_manager.py):
+        la CTR regionale se e' stata trovata per questo cantiere (piu'
+        precisa), altrimenti il satellite -- sempre garantito da
+        ensure_default_basemaps. None solo se nessuno dei due e' mai stato
+        caricato in questa sessione QGIS.
+        """
+        project = QgsProject.instance()
+        for layer in project.mapLayers().values():
+            if layer.name().startswith("CTR - "):
+                return layer
+        layers = project.mapLayersByName(SATELLITE_NAME)
+        return layers[0] if layers else None
+
     def _ensure_wms_scoperto(self, nome, url_base, parola_chiave):
         project = QgsProject.instance()
         if project.mapLayersByName(nome):

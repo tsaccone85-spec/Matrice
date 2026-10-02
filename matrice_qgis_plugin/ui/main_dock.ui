@@ -106,7 +106,17 @@
       <string>Salva area intervento su Matrice</string>
      </property>
      <property name="toolTip">
-      <string>Scrive su Matrice il poligono disegnato nel layer "Area intervento (disegno)".</string>
+      <string>Scrive su Matrice il poligono disegnato nel layer "Area di cantiere (disegno)".</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="stampaLocalizzazioneButton">
+     <property name="text">
+      <string>Stampa tavola di localizzazione (1:200)</string>
+     </property>
+     <property name="toolTip">
+      <string>Esporta in PDF la tavola di localizzazione del cantiere, centrata sul punto/area registrati su Matrice.</string>
      </property>
     </widget>
    </item>
