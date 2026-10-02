@@ -333,6 +333,13 @@ class MatricePlugin:
         layer_states.append(
             ("area_intervento", "Area intervento", self.localizzazione_manager.is_area_visibile(cantiere_id))
         )
+        # "Sezioni" e' un layer di disegno locale come "Area intervento"
+        # (vedi core/localizzazione_manager.py): nessun dato da precaricare
+        # da Matrice, quindi qui e' sempre non visibile finche' l'operatore
+        # non spunta la casella per crearlo.
+        layer_states.append(
+            ("sezioni", "Sezioni", self.localizzazione_manager.is_sezioni_visibile(cantiere_id))
+        )
         self.dock_widget.populate_layer_toggles(cantiere_id, layer_states)
 
         fasi_rows = self.matrice_api.list_fasi(cantiere_id, self.session.access_token)
@@ -396,6 +403,10 @@ class MatricePlugin:
             self._handle_toggle_area_intervento(cantiere_id, checked)
             return
 
+        if key == "sezioni":
+            self._handle_toggle_sezioni(cantiere_id, checked)
+            return
+
         if checked:
             layer, era_gia_visibile = self.layer_manager.show_layer(cantiere_id, key)
             if not era_gia_visibile:
@@ -425,6 +436,22 @@ class MatricePlugin:
             self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, wkt_esistente)
         else:
             self.localizzazione_manager.set_area_visibile(cantiere_id, checked)
+
+    def _handle_toggle_sezioni(self, cantiere_id, checked):
+        """
+        "Sezioni" e' un layer di disegno locale come "Area intervento", ma
+        senza nulla da precaricare da Matrice (non esiste una colonna
+        geometry per le sezioni, vedi core/localizzazione_manager.py): non
+        va mai distrutto per nasconderlo, la spunta agisce solo sulla
+        visibilita' nel pannello Livelli.
+        """
+        if not self.localizzazione_manager.layer_sezioni_esiste(cantiere_id):
+            if not checked:
+                return  # niente da nascondere
+            nome_cantiere = self.layer_manager.nome_cantiere(cantiere_id) or cantiere_id
+            self.localizzazione_manager.layer_sezioni(cantiere_id, nome_cantiere)
+        else:
+            self.localizzazione_manager.set_sezioni_visibile(cantiere_id, checked)
 
     def _handle_canvas_click(self, event):
         """
