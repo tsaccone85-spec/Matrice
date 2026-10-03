@@ -209,15 +209,25 @@ precompilato di default, non va toccato:
 3. Creare `core/supabase_config.py` (non incluso nel repository di proposito,
    vedi `core/supabase_config.py.example`).
 4. Installare la dipendenza mancante (`psycopg2`) PRIMA di attivare il
-   plugin: da QGIS, Plugin -> Console Python, poi:
-   ```python
-   exec(open(r"PERCORSO/matrice_qgis_plugin/scripts/install_dependencies.py").read())
-   ```
-   (sostituire PERCORSO con il percorso reale della cartella del plugin).
-   Eseguire da dentro QGIS, non con un Python esterno: su Windows in
-   particolare, se ne possono trovare installati diversi sulla stessa
-   macchina, e psycopg2 deve finire in quello usato DA QGIS. Riavviare QGIS
-   al termine.
+   plugin. Due modi, stesso risultato:
+   - **Windows, un doppio clic (consigliato per chi non e' sviluppatore):**
+     eseguire `scripts/installa_dipendenze_windows.bat`. Cerca da solo
+     l'installazione di QGIS sul PC (sia il pacchetto standalone da
+     qgis.org, sia OSGeo4W) e lancia il pip del Python usato DA QGIS.
+     Non e' firmato digitalmente: Windows SmartScreen puo' avvisare al
+     primo avvio ("Ulteriori informazioni" -> "Esegui comunque"). Se non
+     trova QGIS automaticamente, lo dice e propone il metodo manuale.
+   - **Manuale (qualunque sistema operativo):** da QGIS, Plugin -> Console
+     Python, poi:
+     ```python
+     exec(open(r"PERCORSO/matrice_qgis_plugin/scripts/install_dependencies.py").read())
+     ```
+     (sostituire PERCORSO con il percorso reale della cartella del plugin).
+     Eseguire da dentro QGIS, non con un Python esterno: su Windows in
+     particolare, se ne possono trovare installati diversi sulla stessa
+     macchina, e psycopg2 deve finire in quello usato DA QGIS.
+
+   In entrambi i casi, riavviare QGIS al termine.
 5. In QGIS: Estensioni -> Gestione estensioni -> Installate -> attivare
    "Matrice - Rilievo di Scavo".
 6. Alla prima apertura del pannello Matrice, la schermata di configurazione

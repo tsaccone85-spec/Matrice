@@ -1,7 +1,14 @@
 r"""
 Installa le dipendenze Python necessarie al plugin Matrice PRIMA di
-attivarlo (sezione "Installazione per test" del README). Va eseguito UNA
-SOLA VOLTA dalla Console Python di QGIS -- non con il Python di sistema,
+attivarlo (sezione "Installazione per test" del README).
+
+Su Windows, in alternativa a questo script, si puo' usare
+`installa_dipendenze_windows.bat` nella stessa cartella: fa la stessa cosa
+ma con un doppio clic, senza passare dalla Console Python di QGIS (cerca
+da solo l'installazione di QGIS sul PC). Questo script resta il metodo
+valido su qualunque sistema operativo.
+
+Va eseguito UNA SOLA VOLTA dalla Console Python di QGIS -- non con il Python di sistema,
 ne' con uno script .bat/.sh esterno: su Windows in particolare ci sono
 spesso piu' installazioni di Python sulla stessa macchina, e la
 dipendenza deve finire in quella usata DA QGIS, non in una qualunque.
