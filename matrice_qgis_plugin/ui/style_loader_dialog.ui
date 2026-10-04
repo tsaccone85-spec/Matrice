@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>StyleLoaderDialogBase</class>
+ <widget class="QDialog" name="StyleLoaderDialogBase">
+  <property name="windowTitle">
+   <string>Carica stile QGIS</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0" colspan="2">
+    <widget class="QLabel" name="infoLabel">
+     <property name="text">
+      <string>Carica un file .qml da applicare come stile per fasi o per US.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="targetLabel">
+     <property name="text">
+      <string>Applica a</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QComboBox" name="targetCombo">
+     <item>
+      <property name="text">
+       <string>Stile per fasi</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Stile per US (per strati)</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="2" column="0" colspan="2">
+    <layout class="QHBoxLayout" name="fileLayout">
+     <item>
+      <widget class="QLineEdit" name="filePathEdit" />
+     </item>
+     <item>
+      <widget class="QPushButton" name="browseButton">
+       <property name="text">
+        <string>Sfoglia...</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="3" column="0" colspan="2">
+    <widget class="QLabel" name="errorLabel">
+     <property name="styleSheet">
+      <string>color: #b3261e;</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0" colspan="2">
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+</ui>

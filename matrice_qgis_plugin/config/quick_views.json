@@ -1,0 +1,94 @@
+{
+  "viste_rapide": {
+    "per_fasi": {
+      "etichetta": "Vista per fasi",
+      "layer": "rilievo_geometria",
+      "filtro_sql": "",
+      "campo_simbologia": "fase",
+      "colori_fissi": null,
+      "stile_qml": null,
+      "campo_etichetta": null,
+      "richiede_layer_attivo": null
+    },
+    "solo_sepolture": {
+      "etichetta": "Vedi solo le sepolture",
+      "layer": "rilievo_geometria",
+      "filtro_sql": "sepoltura_id IS NOT NULL",
+      "campo_simbologia": null,
+      "colori_fissi": null,
+      "stile_qml": "Sepolture.qml",
+      "campo_etichetta": "numero_tomba",
+      "richiede_layer_attivo": null
+    },
+    "solo_usm": {
+      "etichetta": "Vedi solo le USM",
+      "layer": "rilievo_geometria",
+      "filtro_sql": "definizione = 'USM'",
+      "campo_simbologia": null,
+      "colori_fissi": null,
+      "stile_qml": "USM.qml",
+      "campo_etichetta": null,
+      "richiede_layer_attivo": null
+    },
+    "cs_esito_positivo": {
+      "etichetta": "Colonne stratigrafiche esito positivo",
+      "layer": "colonna_stratigrafica",
+      "filtro_sql": "esito = 'evidenza_rilevata'",
+      "campo_simbologia": "esito",
+      "colori_fissi": {"evidenza_rilevata": "#d32f2f", "nessuna_evidenza": "#388e3c"},
+      "stile_qml": null,
+      "campo_etichetta": null,
+      "richiede_layer_attivo": "colonna_stratigrafica"
+    },
+    "cs_esito_negativo": {
+      "etichetta": "Colonne stratigrafiche esito negativo",
+      "layer": "colonna_stratigrafica",
+      "filtro_sql": "esito = 'nessuna_evidenza'",
+      "campo_simbologia": "esito",
+      "colori_fissi": {"evidenza_rilevata": "#d32f2f", "nessuna_evidenza": "#388e3c"},
+      "stile_qml": null,
+      "campo_etichetta": null,
+      "richiede_layer_attivo": "colonna_stratigrafica"
+    },
+    "cs_tutti_esiti": {
+      "etichetta": "CS tutti gli esiti",
+      "layer": "colonna_stratigrafica",
+      "filtro_sql": "",
+      "campo_simbologia": "esito",
+      "colori_fissi": {"evidenza_rilevata": "#d32f2f", "nessuna_evidenza": "#388e3c"},
+      "stile_qml": null,
+      "campo_etichetta": null,
+      "richiede_layer_attivo": "colonna_stratigrafica"
+    },
+    "carotaggio_esito_positivo": {
+      "etichetta": "Carotaggi esito positivo",
+      "layer": "carotaggio",
+      "filtro_sql": "esito = 'evidenza_rilevata'",
+      "campo_simbologia": "esito",
+      "colori_fissi": {"evidenza_rilevata": "#d32f2f", "nessuna_evidenza": "#388e3c"},
+      "stile_qml": null,
+      "campo_etichetta": null,
+      "richiede_layer_attivo": "carotaggio"
+    },
+    "carotaggio_esito_negativo": {
+      "etichetta": "Carotaggi esito negativo",
+      "layer": "carotaggio",
+      "filtro_sql": "esito = 'nessuna_evidenza'",
+      "campo_simbologia": "esito",
+      "colori_fissi": {"evidenza_rilevata": "#d32f2f", "nessuna_evidenza": "#388e3c"},
+      "stile_qml": null,
+      "campo_etichetta": null,
+      "richiede_layer_attivo": "carotaggio"
+    },
+    "carotaggio_tutti_esiti": {
+      "etichetta": "Carotaggi tutti gli esiti",
+      "layer": "carotaggio",
+      "filtro_sql": "",
+      "campo_simbologia": "esito",
+      "colori_fissi": {"evidenza_rilevata": "#d32f2f", "nessuna_evidenza": "#388e3c"},
+      "stile_qml": null,
+      "campo_etichetta": null,
+      "richiede_layer_attivo": "carotaggio"
+    }
+  }
+}
