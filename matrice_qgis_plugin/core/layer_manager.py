@@ -92,6 +92,21 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "origine_ocr_id"),
         "espressione_display": "'Sezione ' || \"numero_sezione\"",
     },
+    # Candidati di segni archeologici (crop/soil/shadow mark) rilevati
+    # automaticamente da strumento esterno (segni_archeologici/rileva_segni.py,
+    # NDVI multitemporale + microrilievo DTM), caricati su Matrice per
+    # revisione in QGIS. `geom` qui e' una vera colonna PostGIS (poligono),
+    # non sincronizzata da lat/lng come colonna_stratigrafica/carotaggio.
+    "progettazione_cropmark": {
+        "source": "v_progettazione_cropmark_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - cropmark",
+        "wkb_type": Qgis.WkbType.MultiPolygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"tipo\" || ' (' || round(\"area_mq\") || ' mq)'",
+    },
 }
 
 
