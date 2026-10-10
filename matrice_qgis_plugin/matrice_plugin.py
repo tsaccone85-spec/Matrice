@@ -22,6 +22,7 @@ from .core.basemap_manager import BasemapManager
 from .core.db_connector import MatriceConnection
 from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
+from .core.join_elenchi import aggiungi_join_elenchi
 from .core.layer_manager import LAYER_SOURCES, LayerManager
 from .core.localizzazione_manager import LocalizzazioneManager
 from .core.matrice_api import MatriceApi
@@ -141,6 +142,12 @@ class MatricePlugin:
         self.iface.addPluginToMenu("&Matrice", accedi_action)
         self.actions.append(accedi_action)
 
+        join_action = QAction(QIcon(icon_path), "Unisci dati elenchi", self.iface.mainWindow())
+        join_action.triggered.connect(self._join_elenchi_attivo)
+        self.toolbar.addAction(join_action)
+        self.iface.addPluginToMenu("&Matrice", join_action)
+        self.actions.append(join_action)
+
         info_action = QAction(QIcon(icon_path), "Info", self.iface.mainWindow())
         info_action.triggered.connect(self._show_info)
         self.toolbar.addAction(info_action)
@@ -206,6 +213,33 @@ class MatricePlugin:
             if not self._show_connection_settings():
                 return
         self._show_login_dialog()
+
+    def _join_elenchi_attivo(self):
+        """
+        Aggancia le schede US (elenchi di Matrice) al rilievo del layer attivo,
+        sul numero US. Il layer attivo deve essere il rilievo di un cantiere aperto.
+        """
+        layer = self.iface.activeLayer()
+        cantiere_id = self.layer_manager.cantiere_del_layer(layer)
+        if cantiere_id is None:
+            self._show_warning("Seleziona il layer del rilievo di un cantiere aperto da Matrice.")
+            return
+        token = self.session.access_token
+        try:
+            righe = self.matrice_api.list_us(cantiere_id, token, solo_attive=False)
+        except Exception as e:
+            self._show_warning(f"Non riesco a leggere le schede US da Matrice: {e}")
+            return
+        esito = aggiungi_join_elenchi(layer, righe)
+        messaggio = (
+            f"Schede agganciate ai poligoni: {esito['agganciati']}.\n"
+            f"Poligoni senza scheda: {len(esito['senza_scheda'])}"
+            + (f" (US {', '.join(esito['senza_scheda'])})" if esito["senza_scheda"] else "")
+            + f".\nSchede senza poligono: {len(esito['senza_poligono'])}"
+            + (f" (US {', '.join(esito['senza_poligono'])})" if esito["senza_poligono"] else "")
+            + "."
+        )
+        QMessageBox.information(self.iface.mainWindow(), "Unione dati elenchi", messaggio)
 
     def _show_info(self):
         """Informazioni sul plugin (nome, versione, descrizione), lette da metadata.txt."""

@@ -132,6 +132,11 @@ dello stesso colore ne' facilmente confondibili tra loro.
   solo le USM) definite in `config/quick_views.json` e applicate da
   `core/quick_views.py`, sui campi reali della vista
   `v_rilievo_geometria_qgis`
+- "Unisci dati elenchi" (toolbar): con il layer "Rilievo vettoriale" di un
+  cantiere attivo selezionato, aggancia le schede US di Matrice al rilievo
+  sul numero US tramite un join QGIS in sola lettura (campi con prefisso
+  `us_`, es. `us_definizione`); nessuna scrittura su Matrice
+  (`core/join_elenchi.py`)
 - Import GPS differenziale: CSV, GPX (waypoint), SHP e DXF di
   post-processamento, con dialogo dedicato (pulsante "Importa rilievo
   GPS..." nel dock -> `ui/gps_import_dialog.py`): formato riconosciuto

@@ -200,6 +200,20 @@ class LayerManager:
     def current_layers(self, cantiere_id):
         return self._layers_by_cantiere.get(cantiere_id, {})
 
+    def cantiere_del_layer(self, layer):
+        """
+        Ritorna il cantiere_id a cui appartiene `layer` se è il rilievo
+        vettoriale (rilievo_geometria) di un cantiere caricato, altrimenti None.
+        Serve a "Unisci dati elenchi", che lavora solo su quel layer.
+        """
+        if layer is None:
+            return None
+        for cantiere_id, layers in self._layers_by_cantiere.items():
+            rilievo = layers.get("rilievo_geometria")
+            if rilievo is not None and rilievo.id() == layer.id():
+                return cantiere_id
+        return None
+
     def is_layer_shown(self, cantiere_id, key):
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
         return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
