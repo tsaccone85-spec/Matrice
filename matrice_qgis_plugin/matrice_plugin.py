@@ -11,10 +11,9 @@ import os
 
 import configparser
 
-from qgis.core import QgsFeatureRequest, QgsGeometry, QgsProject, QgsRectangle
+from qgis.core import QgsApplication, QgsFeatureRequest, QgsGeometry, QgsProject, QgsRectangle
 from qgis.gui import QgsMapTool
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
-from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QDockWidget, QFileDialog, QMessageBox
 
 from .core.auth import SessionManager
@@ -122,33 +121,41 @@ class MatricePlugin:
         restano comunque raggiungibili dal menu "Matrice" in ogni momento,
         anche a barra nascosta.
         """
-        icon_path = os.path.join(PLUGIN_DIR, "resources", "icons", "matrice.png")
         self.toolbar = self.iface.addToolBar("Matrice")
         self.toolbar.setObjectName("MatriceToolbar")
+
+        # Icone standard del tema QGIS (QgsApplication.getThemeIcon), una
+        # per azione invece di matrice.png ripetuto 4 volte: niente asset
+        # nuovi da mantenere, e restano coerenti col resto dell'interfaccia
+        # (e con un eventuale tema scuro, che le icone del tema seguono).
+        icona_configura = QgsApplication.getThemeIcon("/mActionOptions.svg")
+        icona_accedi = QgsApplication.getThemeIcon("/mIconFieldKey.svg")
+        icona_join = QgsApplication.getThemeIcon("/mActionJoinSimplify.svg")
+        icona_info = QgsApplication.getThemeIcon("/mActionPropertiesWidget.svg")
 
         # Sezione 2/10: prima si impostava host/porta/credenziali da
         # Console Python di QGIS -- ora c'e' una schermata dedicata,
         # raggiungibile sia dal menu/barra sia (automaticamente) al primo
         # accesso se la connessione non e' ancora configurata.
-        configura_action = QAction(QIcon(icon_path), "Configura", self.iface.mainWindow())
+        configura_action = QAction(icona_configura, "Configura", self.iface.mainWindow())
         configura_action.triggered.connect(self._show_connection_settings)
         self.toolbar.addAction(configura_action)
         self.iface.addPluginToMenu("&Matrice", configura_action)
         self.actions.append(configura_action)
 
-        accedi_action = QAction(QIcon(icon_path), "Accedi", self.iface.mainWindow())
+        accedi_action = QAction(icona_accedi, "Accedi", self.iface.mainWindow())
         accedi_action.triggered.connect(self._on_accedi_clicked)
         self.toolbar.addAction(accedi_action)
         self.iface.addPluginToMenu("&Matrice", accedi_action)
         self.actions.append(accedi_action)
 
-        join_action = QAction(QIcon(icon_path), "Unisci dati elenchi", self.iface.mainWindow())
+        join_action = QAction(icona_join, "Unisci dati elenchi", self.iface.mainWindow())
         join_action.triggered.connect(self._join_elenchi_attivo)
         self.toolbar.addAction(join_action)
         self.iface.addPluginToMenu("&Matrice", join_action)
         self.actions.append(join_action)
 
-        info_action = QAction(QIcon(icon_path), "Info", self.iface.mainWindow())
+        info_action = QAction(icona_info, "Info", self.iface.mainWindow())
         info_action.triggered.connect(self._show_info)
         self.toolbar.addAction(info_action)
         self.iface.addPluginToMenu("&Matrice", info_action)

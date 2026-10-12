@@ -186,7 +186,16 @@ class LayerManager:
         layers = {}
         has_data = {}
         for key in LAYER_SOURCES:
-            layer = self._build_layer(cantiere_id, key)
+            # Un layer che non si carica (es. grant mancante su una vista
+            # in produzione) non deve bloccare gli altri: senza questo
+            # try/except un solo RuntimeError qui impediva anche
+            # populate_layer_toggles piu' sotto in matrice_plugin.py,
+            # lasciando l'intero pannello "Livelli del cantiere" vuoto.
+            try:
+                layer = self._build_layer(cantiere_id, key)
+            except RuntimeError:
+                has_data[key] = False
+                continue
             layers[key] = layer
             if layer.featureCount() > 0:
                 QgsProject.instance().addMapLayer(layer)
