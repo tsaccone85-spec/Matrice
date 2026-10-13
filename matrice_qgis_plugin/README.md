@@ -144,6 +144,39 @@ dello stesso colore ne' facilmente confondibili tra loro.
   scrivere, nessuna scrittura su Matrice senza conferma esplicita
   (`core/gps_import.py`)
 
+## Menu "Progettazione" (toolbar, 2026-10-12/13)
+
+Abilitato solo mentre e' attivo in QGIS uno dei layer del flusso
+Progettazione (`CHIAVI_LAYER_PROGETTAZIONE` in `matrice_plugin.py`):
+
+- **"Trincea..."/"Saggio..."**: rettangolo con larghezza/lunghezza date,
+  posizionato con un click (`core/rettangolo_progettazione.py`), poi
+  ruotabile con "Ruota elemento". Tabelle `trincea_progettazione`/
+  `saggio_progettazione`.
+- **"Unita' di Ricognizione (UR)..."**: poligono libero, editing nativo
+  QGIS (nessun tool custom, a differenza di trincea/saggio). Tabella
+  `survey_ur` (colonna `geom`, vista `v_survey_ur_qgis`).
+- **"Rinvenimento..."**: dialog (sceglie la UR di appartenenza --
+  obbligatoria) + un click per posizionare il punto
+  (`core/ritrovamento_progettazione.py`). Tabella `survey_ritrovamento`,
+  vista `v_survey_ritrovamento_qgis` con trigger `INSTEAD OF INSERT`
+  dedicato che traduce la geometria in `lat`/`lng`.
+- **"Crea buffer area di indagine..."**: chiede una distanza (metri) ad
+  ogni generazione, calcola un buffer attorno all'area di cantiere
+  (riproiezione locale azimutale equidistante) e lo salva su
+  `cantiere.area_buffer_geom_wkt` -- guida visiva per disegnare le UR,
+  nessun vincolo geometrico imposto. Layer di sola lettura, rigenerato ad
+  ogni apertura cantiere, rimosso al cambio cantiere
+  (`core/localizzazione_manager.py` `layer_buffer`).
+- **"Ruota elemento"**: richiama lo strumento nativo QGIS "Ruota
+  elementi" (nessuna reimplementazione).
+
+All'apertura di un cantiere, il CRS di progetto QGIS si imposta sul
+sistema di riferimento personale dell'utente loggato
+(`core/sistema_riferimento.py`, mirror di `SISTEMI_RIFERIMENTO` in
+`app/js/schema.js`) -- solo visualizzazione/digitazione, l'archiviazione
+resta sempre WGS84/4326.
+
 ## Cosa resta da completare (segnato con `# TODO` nel codice)
 
 1. **`core/output_generator.py`**: `_add_map_item` e
