@@ -53,6 +53,42 @@ class MatriceApi:
         cantieri.sort(key=lambda c: (c["nome_cantiere"] or "").lower())
         return cantieri
 
+    def trova_utente_per_email(self, email, access_token):
+        """
+        Utente con questa email, filtrato dalla RLS su `utente` (vede solo la
+        propria azienda -- stesso vincolo della query web in dashboard.js
+        `nuovoCantiere`): None se non trovato, cosi' il chiamante decide se
+        trattarlo come "nessun referente diverso dal loggato".
+        """
+        rows = self.rest.select(
+            "utente", access_token,
+            params={"email": f"eq.{email.strip().lower()}", "select": "id,email"},
+        )
+        return rows[0] if rows else None
+
+    def azienda_utente_loggato(self, access_token):
+        """azienda_id dell'utente loggato -- richiesto per crea_cantiere, 'cantiere.azienda_id' e' NOT NULL senza default."""
+        rows = self.rest.select("utente", access_token, params={"id": f"eq.{self.session.user_id}", "select": "azienda_id"})
+        if not rows:
+            raise RuntimeError("Impossibile determinare l'azienda dell'utente loggato.")
+        return rows[0]["azienda_id"]
+
+    def sistema_riferimento_utente_loggato(self, access_token):
+        """id (SISTEMI_RIFERIMENTO) del sistema di riferimento personale dell'utente loggato."""
+        rows = self.rest.select("utente", access_token, params={"id": f"eq.{self.session.user_id}", "select": "sistema_riferimento_id"})
+        return rows[0]["sistema_riferimento_id"] if rows else 1
+
+    def crea_cantiere(self, campi, access_token):
+        """
+        Crea un cantiere su Matrice (sezione 4, "Crea cantiere da QGIS").
+        `campi` e' il dizionario di colonne gia' pronto (nome_cantiere,
+        tipo_intervento, comune, provincia, regione, anno_esecuzione,
+        referente_campo_utente_id, azienda_id, created_by, ...): la
+        validazione dei campi obbligatori resta nel dialog, qui si inserisce
+        senza altra logica -- la RLS su `cantiere` decide se e' permesso.
+        """
+        return self.rest.insert("cantiere", campi, access_token)
+
     def get_regione_cantiere(self, cantiere_id, access_token):
         """Regione del cantiere (sfondo CTR regionale, core/basemap_manager.py), o None se non impostata."""
         rows = self.rest.select(
@@ -67,7 +103,8 @@ class MatriceApi:
         colonna geometry per il cantiere, vedi core/localizzazione_manager.py).
         """
         rows = self.rest.select(
-            "cantiere", access_token, params={"id": f"eq.{cantiere_id}", "select": "lat,lng,area_geom_wkt"}
+            "cantiere", access_token,
+            params={"id": f"eq.{cantiere_id}", "select": "lat,lng,area_geom_wkt,area_buffer_geom_wkt"},
         )
         return rows[0] if rows else None
 
@@ -80,6 +117,10 @@ class MatriceApi:
         plugin.
         """
         return self.rest.update("cantiere", "id", cantiere_id, {"area_geom_wkt": wkt}, access_token)
+
+    def update_area_buffer(self, cantiere_id, wkt, access_token):
+        """Scrive il buffer generato attorno all'area di indagine su cantiere.area_buffer_geom_wkt."""
+        return self.rest.update("cantiere", "id", cantiere_id, {"area_buffer_geom_wkt": wkt}, access_token)
 
     def list_fasi(self, cantiere_id, access_token):
         """

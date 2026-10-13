@@ -132,6 +132,26 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "\"nome\"",
     },
+    "survey_ur": {
+        "source": "v_survey_ur_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Unità di Ricognizione",
+        "wkb_type": Qgis.WkbType.Polygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"codice_ur\"",
+    },
+    "survey_ritrovamento": {
+        "source": "v_survey_ritrovamento_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Rinvenimenti",
+        "wkb_type": Qgis.WkbType.Point,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "ur_id"),
+        "espressione_display": "'Rinvenimento ' || \"numero_progressivo\"",
+    },
 }
 
 
