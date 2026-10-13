@@ -107,6 +107,31 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "\"tipo\" || ' (' || round(\"area_mq\") || ' mq)'",
     },
+    # Trincee e Saggi del flusso Progettazione Archeologica (migrazione
+    # 0068_trincea_saggio_progettazione.sql): rettangoli creati dal menu
+    # "Progettazione" della toolbar (core/rettangolo_progettazione.py), non
+    # disegnati a mano. Due tabelle separate: stessa forma (rettangolo +
+    # rotazione) ma campi/tempistiche diversi (vedi la migrazione).
+    "trincea_progettazione": {
+        "source": "v_trincea_progettazione_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Trincee",
+        "wkb_type": Qgis.WkbType.Polygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"nome\"",
+    },
+    "saggio_progettazione": {
+        "source": "v_saggio_progettazione_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Saggi",
+        "wkb_type": Qgis.WkbType.Polygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"nome\"",
+    },
 }
 
 
