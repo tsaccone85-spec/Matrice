@@ -222,7 +222,7 @@ class LocalizzazioneManager:
 
     def remove_cantiere(self, cantiere_id):
         """
-        Rimuove dal progetto QGIS i due layer di localizzazione/area del
+        Rimuove dal progetto QGIS i layer di localizzazione/area/buffer del
         cantiere indicato (passaggio a un altro cantiere) -- a differenza di
         set_punto_visibile/set_area_visibile, qui la rimozione e' voluta, non
         solo un cambio di visibilita'.
@@ -241,6 +241,10 @@ class LocalizzazioneManager:
         layer_area = self._layer_area_per_cantiere.pop(cantiere_id, None)
         if layer_area is not None and QgsProject.instance().mapLayer(layer_area.id()) is not None:
             QgsProject.instance().removeMapLayer(layer_area.id())
+
+        layer_buffer = self._layer_buffer_per_cantiere.pop(cantiere_id, None)
+        if layer_buffer is not None and QgsProject.instance().mapLayer(layer_buffer.id()) is not None:
+            QgsProject.instance().removeMapLayer(layer_buffer.id())
 
         return area_non_salvata
 

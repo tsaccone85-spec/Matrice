@@ -534,6 +534,10 @@ class MatricePlugin:
             self._apply_area_style(
                 self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione["area_geom_wkt"])
             )
+        if localizzazione and localizzazione.get("area_buffer_geom_wkt"):
+            self.localizzazione_manager.layer_buffer(
+                cantiere_id, nome_cantiere, localizzazione["area_buffer_geom_wkt"]
+            )
 
         for key, layer in layers.items():
             if has_data[key]:
@@ -679,7 +683,14 @@ class MatricePlugin:
         layer, _ = self.layer_manager.show_layer(cantiere_id, "survey_ritrovamento")
 
         layer_ur = self.layer_manager.current_layers(cantiere_id).get("survey_ur")
-        ur_disponibili = [(f["id"], f["codice_ur"]) for f in layer_ur.getFeatures()] if layer_ur else []
+        # f["id"] e' None per una UR disegnata ma non ancora salvata (layer
+        # in edit mode, vedi _disegna_unita_ricognizione): esclusa, altrimenti
+        # l'insert del rinvenimento fallirebbe sul vincolo ur_id NOT NULL con
+        # un errore generico.
+        ur_disponibili = (
+            [(f["id"], f["codice_ur"]) for f in layer_ur.getFeatures() if f["id"] is not None]
+            if layer_ur else []
+        )
         if not ur_disponibili:
             QMessageBox.warning(
                 self.iface.mainWindow(), "Progettazione",
@@ -869,6 +880,10 @@ class MatricePlugin:
             self._apply_area_style(
                 self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, localizzazione.get("area_geom_wkt"))
             )
+            if localizzazione.get("area_buffer_geom_wkt"):
+                self.localizzazione_manager.layer_buffer(
+                    cantiere_id, nome_cantiere, localizzazione["area_buffer_geom_wkt"]
+                )
         else:
             self.localizzazione_manager.set_area_visibile(cantiere_id, checked)
 
