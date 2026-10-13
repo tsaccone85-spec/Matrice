@@ -107,6 +107,21 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "\"tipo\" || ' (' || round(\"area_mq\") || ' mq)'",
     },
+    # Poligoni dei vincoli paesaggistici SITAP (MiC) intersecanti l'area di
+    # cantiere, salvati dal pannello "Vincoli paesaggistici" dopo l'analisi
+    # WFS+Turf lato client (app/js/tool-vincoli.js, 2026-10-13). Solo gli
+    # areali (art. 136/142): lineari/puntuali restano solo a video, mai
+    # persistiti qui.
+    "progettazione_vincolo": {
+        "source": "v_progettazione_vincolo_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - vincoli",
+        "wkb_type": Qgis.WkbType.MultiPolygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "attributi"),
+        "espressione_display": "coalesce(\"nome\", \"codice_norma\", 'Vincolo')",
+    },
     # Trincee e Saggi del flusso Progettazione Archeologica (migrazione
     # 0068_trincea_saggio_progettazione.sql): rettangoli creati dal menu
     # "Progettazione" della toolbar (core/rettangolo_progettazione.py), non

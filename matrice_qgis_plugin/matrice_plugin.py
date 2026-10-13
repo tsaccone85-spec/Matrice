@@ -31,6 +31,7 @@ from .core.layer_manager import LAYER_SOURCES, LayerManager
 # Chiave non presente = livello non raggruppato, resta in cima come prima.
 _GRUPPO_LIVELLI = {
     "progettazione_cropmark": "Progettazione",
+    "progettazione_vincolo": "Progettazione",
     "trincea_progettazione": "Progettazione",
     "saggio_progettazione": "Progettazione",
 }
