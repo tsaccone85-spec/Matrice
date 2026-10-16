@@ -16,6 +16,8 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "main_doc
 
 class MainDockWidget(QDockWidget):
     logout_requested = pyqtSignal()
+    nuovo_cantiere_richiesto = pyqtSignal()
+    aggiorna_cantieri_richiesto = pyqtSignal()
     cantiere_selected = pyqtSignal(str, str)  # cantiere.id (uuid), nome_cantiere
     quick_view_requested = pyqtSignal(str, str)
     gps_import_requested = pyqtSignal(str)  # cantiere.id del rilievo aperto
@@ -31,6 +33,8 @@ class MainDockWidget(QDockWidget):
 
         self._content.errorLabel.setText("")
         self._content.apriTavolaButton.clicked.connect(self._on_apri_tavola)
+        self._content.nuovoCantiereButton.clicked.connect(self.nuovo_cantiere_richiesto.emit)
+        self._content.aggiornaCantieriButton.clicked.connect(self.aggiorna_cantieri_richiesto.emit)
         self._content.applyQuickViewButton.clicked.connect(self._on_apply_quick_view)
         self._content.importaGpsButton.clicked.connect(self._on_importa_gps)
         self._content.salvaAreaButton.clicked.connect(self._on_salva_area)
