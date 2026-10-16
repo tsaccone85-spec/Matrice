@@ -395,16 +395,20 @@ class MatricePlugin:
         valori = dialog.valori()
         token = self.session.access_token
 
-        referente = self.matrice_api.trova_utente_per_email(valori["email_referente"], token)
-        if referente is not None:
-            referente_campo_utente_id = referente["id"]
-        else:
+        email_referente = valori["email_referente"]
+        if not email_referente:
             referente_campo_utente_id = self.session.user_id
-            self.iface.messageBar().pushWarning(
-                "Matrice",
-                "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
-                "sull'utente attualmente connesso.",
-            )
+        else:
+            referente = self.matrice_api.trova_utente_per_email(email_referente, token)
+            if referente is not None:
+                referente_campo_utente_id = referente["id"]
+            else:
+                referente_campo_utente_id = self.session.user_id
+                self.iface.messageBar().pushWarning(
+                    "Matrice",
+                    "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
+                    "sull'utente attualmente connesso.",
+                )
 
         try:
             azienda_id = self.matrice_api.azienda_utente_loggato(token)
@@ -473,6 +477,12 @@ class MatricePlugin:
         return MatriceConnection.is_configured()
 
     def handle_logout(self):
+        # Rimuove i layer e lo scollega la sincronizzazione (sync_handler/
+        # point_sync_handler) del cantiere lasciato aperto: altrimenti
+        # restano in mappa editabili e un editing successivo al logout
+        # tenterebbe comunque la scrittura con session.user_id=None.
+        if self.session.cantiere_corrente_id is not None:
+            self._rimuovi_layer_cantiere(self.session.cantiere_corrente_id)
         self.session.logout()
         self.dock_widget.reset()
         self.dock_widget.hide()

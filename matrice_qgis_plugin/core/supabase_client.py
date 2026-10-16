@@ -112,6 +112,22 @@ class SupabaseRestClient:
         except urllib.error.URLError as exc:
             return None, f"Rete: {exc.reason}"
 
+    def insert(self, table, fields, access_token):
+        """
+        POST su /rest/v1/<table> con il token dell'utente loggato: come
+        select()/update(), e' la Row Level Security del database a
+        decidere se la scrittura e' permessa, non il plugin. Ritorna la
+        riga appena creata (Prefer: return=representation).
+        """
+        url = f"{self.base_url}/rest/v1/{table}"
+        try:
+            rows = self._request(
+                "POST", url, body=fields, access_token=access_token, prefer="return=representation"
+            )
+        except _HttpError as exc:
+            raise SupabaseRequestError(self._messaggio_semplice(exc)) from exc
+        return rows[0] if rows else None
+
     def update(self, table, id_column, record_id, fields, access_token):
         """
         PATCH su /rest/v1/<table>?<id_column>=eq.<record_id> con il token

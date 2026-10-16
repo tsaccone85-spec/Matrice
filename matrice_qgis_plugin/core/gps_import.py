@@ -248,7 +248,7 @@ class GpsImporter:
         righe = self.matrice_api.list_us(cantiere_id, token, solo_attive=False)
         return {str(r["numero_us"]): r["id"] for r in righe}
 
-    def apply_matches(self, matches, entita=ENTITA_US):
+    def apply_matches(self, matches, cantiere_id, entita=ENTITA_US):
         """
         Scrive su Matrice solo i punti confermati dall'operatore (sezione 4).
 
@@ -262,6 +262,11 @@ class GpsImporter:
           sostituita. Se il punto non aveva una quota leggibile, quota_slm
           non viene toccata (mai sovrascritta con un
           valore vuoto).
+
+        Ogni scrittura viene loggata in us_storico_modifiche (cantiere_id
+        passato dal chiamante, che lo conosce gia' -- stessa garanzia di
+        tracciabilita' di sync_handler/point_position_sync, qui mancante
+        fino ad ora).
         """
         tabella_punto_diretto = {
             ENTITA_COLONNA: "colonna_stratigrafica",
@@ -281,6 +286,7 @@ class GpsImporter:
                         f"UPDATE {tabella_punto_diretto} SET lat = %s, lng = %s WHERE id = %s;",
                         (match["y"], match["x"], match["id_target"]),
                     )
+                self._log_modifica(cantiere_id, tabella_punto_diretto, match["id_target"], "lat/lng")
             else:
                 self.connection.execute(
                     """
@@ -290,3 +296,14 @@ class GpsImporter:
                     """,
                     (match["x"], match["y"], match["id_target"]),
                 )
+                self._log_modifica(cantiere_id, "rilievo_geometria", match["id_target"], "geom")
+
+    def _log_modifica(self, cantiere_id, tabella, record_id, campo):
+        self.connection.execute(
+            """
+            INSERT INTO us_storico_modifiche
+                (cantiere_id, tabella, record_id, utente_id, campo, valore_precedente, valore_nuovo, tipo_operazione)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+            """,
+            (cantiere_id, tabella, record_id, self.session.user_id, campo, None, "import GPS", "aggiornamento"),
+        )

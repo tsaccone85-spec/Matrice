@@ -143,7 +143,7 @@ class GpsImportDialog(QDialog, FORM_CLASS):
         if not self._risultato or not self._risultato.matches:
             return
         try:
-            self.gps_importer.apply_matches(self._risultato.matches, entita=self._risultato.entita)
+            self.gps_importer.apply_matches(self._risultato.matches, self.cantiere_id, entita=self._risultato.entita)
         except Exception as exc:
             self._set_status(self._messaggio_semplice(exc), ok=False)
             return

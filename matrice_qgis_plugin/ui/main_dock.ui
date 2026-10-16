@@ -22,7 +22,24 @@
        </property>
       </widget>
      </item>
+     <item>
+      <widget class="QPushButton" name="aggiornaCantieriButton">
+       <property name="text">
+        <string>⟳ Aggiorna</string>
+       </property>
+       <property name="toolTip">
+        <string>Rilegge l'elenco cantieri da Matrice (es. dopo un cantiere creato nel frattempo dall'app web o da un'altra sessione).</string>
+       </property>
+      </widget>
+     </item>
     </layout>
+   </item>
+   <item>
+    <widget class="QPushButton" name="nuovoCantiereButton">
+     <property name="text">
+      <string>Crea cantiere da QGIS...</string>
+     </property>
+    </widget>
    </item>
    <item>
     <widget class="QLabel" name="errorLabel">

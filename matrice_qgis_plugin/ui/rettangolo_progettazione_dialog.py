@@ -12,15 +12,18 @@ il dialog si chiude.
 
 from qgis.PyQt.QtCore import QDate
 from qgis.PyQt.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 METODO_TRINCEA = [("manuale", "Manuale"), ("meccanico", "Meccanico"), ("misto", "Misto")]
@@ -90,9 +93,17 @@ class RettangoloProgettazioneDialog(QDialog):
             self.dataAperturaInput.setCalendarPopup(True)
             form.addRow("Data apertura", self.dataAperturaInput)
 
+            self.dataChiusuraCheck = QCheckBox("Chiuso")
             self.dataChiusuraInput = QDateEdit(QDate.currentDate())
             self.dataChiusuraInput.setCalendarPopup(True)
-            form.addRow("Data chiusura (opzionale)", self.dataChiusuraInput)
+            self.dataChiusuraInput.setEnabled(False)
+            self.dataChiusuraCheck.toggled.connect(self.dataChiusuraInput.setEnabled)
+            riga_chiusura = QWidget()
+            riga_chiusura_layout = QHBoxLayout(riga_chiusura)
+            riga_chiusura_layout.setContentsMargins(0, 0, 0, 0)
+            riga_chiusura_layout.addWidget(self.dataChiusuraCheck)
+            riga_chiusura_layout.addWidget(self.dataChiusuraInput)
+            form.addRow("Data chiusura (opzionale)", riga_chiusura)
 
         pulsanti = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         pulsanti.accepted.connect(self.accept)
@@ -115,5 +126,7 @@ class RettangoloProgettazioneDialog(QDialog):
             base["stato"] = self.statoInput.currentData()
             base["esito"] = self.esitoInput.currentData()
             base["data_apertura"] = self.dataAperturaInput.date().toString("yyyy-MM-dd")
-            base["data_chiusura"] = self.dataChiusuraInput.date().toString("yyyy-MM-dd")
+            base["data_chiusura"] = (
+                self.dataChiusuraInput.date().toString("yyyy-MM-dd") if self.dataChiusuraCheck.isChecked() else None
+            )
         return base

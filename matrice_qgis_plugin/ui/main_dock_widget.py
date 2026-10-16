@@ -22,6 +22,8 @@ class MainDockWidget(QDockWidget):
     layer_visibility_toggled = pyqtSignal(str, str, bool)  # cantiere_id, layer_key, mostra/nascondi
     salva_area_requested = pyqtSignal(str)  # cantiere.id della tavola aperta
     stampa_localizzazione_requested = pyqtSignal(str)  # cantiere.id della tavola aperta
+    nuovo_cantiere_richiesto = pyqtSignal()
+    aggiorna_cantieri_richiesto = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__("Matrice", parent)
@@ -36,6 +38,8 @@ class MainDockWidget(QDockWidget):
         self._content.salvaAreaButton.clicked.connect(self._on_salva_area)
         self._content.stampaLocalizzazioneButton.clicked.connect(self._on_stampa_localizzazione)
         self._content.logoutButton.clicked.connect(self.logout_requested.emit)
+        self._content.nuovoCantiereButton.clicked.connect(self.nuovo_cantiere_richiesto.emit)
+        self._content.aggiornaCantieriButton.clicked.connect(self.aggiorna_cantieri_richiesto.emit)
         self._content.layerToggleListWidget.itemChanged.connect(self._on_layer_toggle_changed)
 
     # ------------------------------------------------------------------

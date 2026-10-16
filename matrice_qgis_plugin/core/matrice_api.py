@@ -60,9 +60,17 @@ class MatriceApi:
         `nuovoCantiere`): None se non trovato, cosi' il chiamante decide se
         trattarlo come "nessun referente diverso dal loggato".
         """
+        # PostgREST tratta virgola/asterisco/punto come sintassi del filtro
+        # (operatori "in", wildcard "like", range): un'email che li
+        # contenesse (es. un alias con "+", o di fatto solo "." nel nome)
+        # va passata tramite "eq" con valore quotato, non concatenata nudo
+        # nell'URL, altrimenti PostgREST la interpreta diversamente da un
+        # confronto letterale.
+        email_normalizzata = email.strip().lower()
+        valore_filtro = 'eq."{}"'.format(email_normalizzata.replace('"', '\\"'))
         rows = self.rest.select(
             "utente", access_token,
-            params={"email": f"eq.{email.strip().lower()}", "select": "id,email"},
+            params={"email": valore_filtro, "select": "id,email"},
         )
         return rows[0] if rows else None
 

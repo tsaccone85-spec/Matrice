@@ -116,6 +116,7 @@ class SessionManager:
         self.access_token = None
         self.refresh_token = None
         self.token_expiry = None
+        self.cantiere_corrente_id = None
 
     def renew_if_needed(self):
         """
