@@ -36,16 +36,13 @@ Nuove, create per questo plugin (migrazioni gia' applicate su Supabase):
   attive" di sezione 8; non esisteva in produzione, e' stato aggiunto con
   una migrazione additiva dedicata
 
-**Ancora da creare su Supabase** (il codice del plugin la usa gia', ma la
-migrazione va applicata a parte da chi gestisce il database -- non e' in
-questo repository):
-- `utente_credenziali_copernicus` (`core/copernicus_sync.py`) -- sincronizza
-  le credenziali OAuth Copernicus Data Space (gia' configurate
-  dall'operatore per gli strumenti esterni "carte-locale"/"cropmark-
-  locale", lette dal registro Windows HKCU\Environment) al login riuscito
-  nel plugin, cosi' vanno inserite una volta sola. Finche' la tabella non
-  esiste la sincronizzazione fallisce silenziosamente (try/except, mai
-  bloccante per il login):
+- `utente_credenziali_copernicus` (migrazione `crea_utente_credenziali_copernicus`,
+  applicata il 2026-10-16) -- sincronizza le credenziali OAuth Copernicus
+  Data Space (gia' configurate dall'operatore per gli strumenti esterni
+  "carte-locale"/"cropmark-locale", lette dal registro Windows
+  HKCU\Environment) al login riuscito nel plugin QGIS
+  (`core/copernicus_sync.py`), cosi' vanno inserite una volta sola invece
+  che per ogni strumento:
   ```sql
   create table utente_credenziali_copernicus (
       utente_id uuid primary key references utente(id) on delete cascade,
@@ -59,7 +56,9 @@ questo repository):
   ```
   Senza la policy RLS sopra, `copernicus_client_secret` sarebbe leggibile
   da chiunque abbia un token valido: e' un segreto OAuth, non un dato
-  pubblico come `cantiere.nome_cantiere`.
+  pubblico come `cantiere.nome_cantiere`. RLS e policy verificate con gli
+  advisor di sicurezza di Supabase dopo l'applicazione: nessun avviso su
+  questa tabella.
 
 **Non esistono** (e non vanno mai referenziate nel codice): una tabella
 `fase` a se stante (`fase` e' un campo testo libero su `us`), un campo
