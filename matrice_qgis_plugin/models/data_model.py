@@ -16,7 +16,7 @@ esistito in produzione): allineati alla terminologia di cantiere. Elenco
 indicativo, non vincolante lato codice (il campo reale e' testo libero).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 DEFINIZIONE_US_TIPICHE = ("strato", "USM", "taglio", "riempimento", "negativo")

@@ -14,7 +14,7 @@ import configparser
 from qgis.core import QgsApplication, QgsCoordinateReferenceSystem, QgsFeature, QgsFeatureRequest, QgsGeometry, QgsProject, QgsRectangle
 from qgis.gui import QgsMapTool
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
-from qgis.PyQt.QtWidgets import QAction, QDockWidget, QFileDialog, QMenu, QMessageBox, QToolButton
+from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMenu, QMessageBox, QToolButton
 
 from .core.auth import SessionManager
 from .core.basemap_manager import BasemapManager

@@ -13,9 +13,6 @@ sezione_prospetto) usano invece core/point_position_sync.py, perche' li'
 la regola di business (quota manuale vs. ricalcolo da DEM) e' diversa.
 """
 
-import datetime
-
-
 class SyncHandler:
     def __init__(self, connection, session):
         self.connection = connection
