@@ -420,12 +420,22 @@ class MatricePlugin:
                 "created_by": self.session.user_id,
             }
             nuovo = self.matrice_api.crea_cantiere(campi, token)
-            # Se il referente di campo e' un utente diverso da chi crea il
-            # cantiere, serve anche una riga cantiere_accesso: la RLS su
-            # `cantiere` (has_cantiere_access) mostra la riga solo a chi ha
-            # un accesso esplicito, e il referente non lo ha automaticamente
-            # solo perche' e' indicato in referente_campo_utente_id (stessa
-            # regola della web app, vedi dashboard.js `nuovoCantiere`).
+            # Creare la riga su `cantiere` non da' accesso a nessuno: la RLS
+            # (has_cantiere_access) mostra il cantiere solo a chi ha una riga
+            # esplicita in cantiere_accesso, ed essere created_by non basta.
+            # Serve quindi la riga per chi lo crea (altrimenti non comparirebbe
+            # nel proprio elenco cantieri), e se il referente di campo e' un
+            # utente diverso serve anche per lui (stessa regola della web app,
+            # vedi dashboard.js `nuovoCantiere`).
+            self.matrice_api.rest.insert(
+                "cantiere_accesso",
+                {
+                    "cantiere_id": nuovo["id"],
+                    "utente_id": self.session.user_id,
+                    "ruolo_accesso": "editor",
+                },
+                token,
+            )
             if referente_campo_utente_id != self.session.user_id:
                 self.matrice_api.rest.insert(
                     "cantiere_accesso",
