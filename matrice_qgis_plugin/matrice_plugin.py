@@ -388,23 +388,40 @@ class MatricePlugin:
         la tavola appena creata -- stesso punto di arrivo di un cantiere
         scelto dall'elenco (handle_open_tavola).
         """
-        dialog = NuovoCantiereDialog(self.iface.mainWindow())
+        token = self.session.access_token
+        try:
+            tipi_consentiti = self.matrice_api.tipi_intervento_consentiti(token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Matrice", str(exc))
+            return
+        if not tipi_consentiti:
+            self.iface.messageBar().pushWarning(
+                "Matrice",
+                "Il profilo collegato non e' abilitato a nessun tipo di lavoro: "
+                "contattare il referente dell'azienda su Matrice.",
+            )
+            return
+
+        dialog = NuovoCantiereDialog(tipi_consentiti, self.iface.mainWindow())
         if not dialog.exec_():
             return
 
         valori = dialog.valori()
-        token = self.session.access_token
 
-        referente = self.matrice_api.trova_utente_per_email(valori["email_referente"], token)
-        if referente is not None:
-            referente_campo_utente_id = referente["id"]
-        else:
+        email_referente = valori["email_referente"]
+        if not email_referente:
             referente_campo_utente_id = self.session.user_id
-            self.iface.messageBar().pushWarning(
-                "Matrice",
-                "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
-                "sull'utente attualmente connesso.",
-            )
+        else:
+            referente = self.matrice_api.trova_utente_per_email(email_referente, token)
+            if referente is not None:
+                referente_campo_utente_id = referente["id"]
+            else:
+                referente_campo_utente_id = self.session.user_id
+                self.iface.messageBar().pushWarning(
+                    "Matrice",
+                    "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
+                    "sull'utente attualmente connesso.",
+                )
 
         try:
             azienda_id = self.matrice_api.azienda_utente_loggato(token)

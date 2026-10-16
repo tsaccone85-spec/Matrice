@@ -18,6 +18,28 @@ per poter editare una geometria in mappa.
 """
 
 
+# Valori ammessi da cantiere.tipo_intervento (check constraint su Supabase)
+# con l'etichetta mostrata nel menu a tendina "Nuovo cantiere". L'ordine qui
+# e' l'ordine di visualizzazione.
+TIPI_INTERVENTO = [
+    ("scavo", "Scavo"),
+    ("sorveglianza", "Sorveglianza archeologica"),
+    ("vpa", "Verifica preventiva dell'interesse archeologico (VPA)"),
+    ("carotaggi", "Carotaggi"),
+    ("progettazione", "Progettazione archeologica"),
+    ("museo", "Museo"),
+]
+
+# Tipi di lavoro gated da una funzione specifica in funzione_accesso_utente
+# (stessa tabella/logica usata per le altre funzioni a pagamento, es.
+# relazione_ia): un tipo assente da questa mappa (scavo, carotaggi,
+# progettazione, museo) e' una funzionalita' di base, sempre proponibile.
+FUNZIONE_RICHIESTA_PER_TIPO_INTERVENTO = {
+    "sorveglianza": "sorveglianza_trincea",
+    "vpa": "vpa_gna",
+}
+
+
 class MatriceApi:
     """
     Riceve il SessionManager (non un client gia' pronto) e richiede il
@@ -77,6 +99,26 @@ class MatriceApi:
         """id (SISTEMI_RIFERIMENTO) del sistema di riferimento personale dell'utente loggato."""
         rows = self.rest.select("utente", access_token, params={"id": f"eq.{self.session.user_id}", "select": "sistema_riferimento_id"})
         return rows[0]["sistema_riferimento_id"] if rows else 1
+
+    def tipi_intervento_consentiti(self, access_token):
+        """
+        Sottoinsieme di TIPI_INTERVENTO che l'utente loggato puo' scegliere
+        nel dialog "Nuovo cantiere": i tipi di base (vedi
+        FUNZIONE_RICHIESTA_PER_TIPO_INTERVENTO) sono sempre proposti, gli
+        altri solo se all'utente e' stata concessa la funzione
+        corrispondente -- stessa tabella/meccanismo delle altre funzioni a
+        pagamento (es. relazione_ia), non una logica di permessi nuova.
+        """
+        rows = self.rest.select(
+            "funzione_accesso_utente", access_token,
+            params={"utente_id": f"eq.{self.session.user_id}", "select": "funzione"},
+        )
+        funzioni_concesse = {row["funzione"] for row in (rows or [])}
+        return [
+            (valore, etichetta)
+            for valore, etichetta in TIPI_INTERVENTO
+            if FUNZIONE_RICHIESTA_PER_TIPO_INTERVENTO.get(valore) in (None, *funzioni_concesse)
+        ]
 
     def crea_cantiere(self, campi, access_token):
         """
