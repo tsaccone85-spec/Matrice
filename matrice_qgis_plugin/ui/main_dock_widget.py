@@ -94,23 +94,50 @@ class MainDockWidget(QDockWidget):
 
     def populate_layer_toggles(self, cantiere_id, layer_states):
         """
-        layer_states: [(key, display_name, has_data), ...] -- uno per
-        ciascun livello di LayerManager.LAYER_SOURCES. Spuntati quelli gia'
-        in mappa (has_data=True, caricati automaticamente all'apertura
+        layer_states: [(key, display_name, has_data, gruppo), ...] -- uno
+        per ciascun livello di LayerManager.LAYER_SOURCES. Spuntati quelli
+        gia' in mappa (has_data=True, caricati automaticamente all'apertura
         tavola perche' contengono dati); gli altri restano disponibili a
         richiesta, spuntabili per aggiungerli comunque in mappa (vuoti,
         pronti per iniziare a digitalizzare).
+
+        `gruppo` (es. "Progettazione", richiesta Tommaso 2026-10-13) separa
+        in sezioni i livelli che appartengono a uno stesso flusso di lavoro,
+        invece di lasciarli sparsi tra tutti gli altri: None resta in cima,
+        senza intestazione, nell'ordine ricevuto; i livelli con lo stesso
+        gruppo finiscono sotto un'unica intestazione (non selezionabile),
+        in ordine di prima apparizione.
         """
         self._cantiere_corrente_id = cantiere_id
         list_widget = self._content.layerToggleListWidget
         list_widget.blockSignals(True)
         list_widget.clear()
-        for key, display_name, has_data in layer_states:
-            item = QListWidgetItem(display_name)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setData(Qt.UserRole, key)
-            item.setCheckState(Qt.Checked if has_data else Qt.Unchecked)
-            list_widget.addItem(item)
+
+        gruppi = {}  # nome gruppo -> [(key, display_name, has_data), ...], in ordine di prima apparizione
+        for key, display_name, has_data, gruppo in layer_states:
+            if gruppo is None:
+                item = QListWidgetItem(display_name)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setData(Qt.UserRole, key)
+                item.setCheckState(Qt.Checked if has_data else Qt.Unchecked)
+                list_widget.addItem(item)
+            else:
+                gruppi.setdefault(gruppo, []).append((key, display_name, has_data))
+
+        for nome_gruppo, membri in gruppi.items():
+            intestazione = QListWidgetItem(nome_gruppo)
+            intestazione.setFlags(Qt.ItemIsEnabled)  # solo titolo: non selezionabile, non spuntabile
+            font = intestazione.font()
+            font.setBold(True)
+            intestazione.setFont(font)
+            list_widget.addItem(intestazione)
+            for key, display_name, has_data in membri:
+                item = QListWidgetItem("    " + display_name)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setData(Qt.UserRole, key)
+                item.setCheckState(Qt.Checked if has_data else Qt.Unchecked)
+                list_widget.addItem(item)
+
         list_widget.blockSignals(False)
 
     def _on_layer_toggle_changed(self, item):
