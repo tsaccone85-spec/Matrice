@@ -34,7 +34,11 @@ from ..core.supabase_config import DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_U
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "connection_settings_dialog.ui"))
 
 DEFAULT_PORT = "5432"
-DEFAULT_DBNAME = "matrice"
+# Supabase chiama sempre "postgres" il database di un progetto (verificato
+# in diretta sul progetto di produzione con `select current_database()`):
+# non esiste un database chiamato "matrice" da nessuna parte, era un
+# placeholder sbagliato.
+DEFAULT_DBNAME = "postgres"
 DEFAULT_SSLMODE = "require"
 
 
