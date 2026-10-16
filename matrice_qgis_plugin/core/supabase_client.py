@@ -166,6 +166,14 @@ class SupabaseRestClient:
             raise _HttpError(exc.code, message) from exc
         except urllib.error.URLError as exc:
             raise ConnectionError(f"Impossibile raggiungere Matrice: {exc.reason}") from exc
+        except TimeoutError as exc:
+            # Un timeout durante response.read() (corpo della risposta, non
+            # la sola connessione) arriva come TimeoutError "nudo", NON
+            # avvolto in URLError da urllib: senza questo except, il
+            # messaggio tecnico grezzo ("The read operation timed out")
+            # passava cosi' com'e' all'operatore invece del messaggio in
+            # linguaggio semplice (principio generale, sezione 2/8).
+            raise ConnectionError(f"Impossibile raggiungere Matrice: {exc}") from exc
 
     def _messaggio_semplice(self, exc):
         """Mai un errore tecnico grezzo mostrato all'operatore (principio generale, sezione 2/8)."""
