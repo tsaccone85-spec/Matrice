@@ -33,10 +33,28 @@ from qgis.core import (
     QgsProject,
     QgsVectorLayer,
 )
+from qgis.PyQt import sip
 
 NOME_LAYER_PUNTO = "Localizzazione di cantiere"
 NOME_LAYER_AREA = "Area di cantiere (disegno)"
 NOME_LAYER_BUFFER = "Area buffer indagine"
+
+
+def _layer_presente(layer):
+    """
+    True se `layer` esiste ancora nel progetto QGIS corrente.
+
+    Un operatore puo' rimuovere un layer a mano dal pannello Livelli di
+    QGIS (non solo togliendo la spunta dal pannello Matrice): l'oggetto
+    C++ sottostante viene distrutto, ma il wrapper Python resta nei
+    dizionari _layer_*_per_cantiere qui sotto finche' non si richiama
+    questa funzione. Senza `sip.isdeleted()`, chiamare layer.id() su un
+    wrapper il cui oggetto C++ e' gia' stato eliminato lancia
+    RuntimeError invece di poter essere trattato come "non piu'
+    presente" (bug corretto: mandava in errore ogni funzione di questo
+    modulo che tocca il layer dopo una rimozione manuale).
+    """
+    return layer is not None and not sip.isdeleted(layer) and QgsProject.instance().mapLayer(layer.id()) is not None
 
 
 def calcola_buffer_wkt(area_wkt, distanza_m, segmenti=16):
@@ -87,7 +105,7 @@ class LocalizzazioneManager:
         comunque creato, ma vuoto (nessun punto da mostrare).
         """
         layer_esistente = self._layer_punto_per_cantiere.get(cantiere_id)
-        if layer_esistente is not None and QgsProject.instance().mapLayer(layer_esistente.id()) is not None:
+        if _layer_presente(layer_esistente):
             return layer_esistente
 
         nome = f"{NOME_LAYER_PUNTO} - {nome_cantiere}"
@@ -104,11 +122,11 @@ class LocalizzazioneManager:
     def layer_punto_esiste(self, cantiere_id):
         """True se il layer del punto e' gia' stato creato e risulta ancora nel progetto."""
         layer = self._layer_punto_per_cantiere.get(cantiere_id)
-        return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
+        return _layer_presente(layer)
 
     def is_punto_visibile(self, cantiere_id):
         layer = self._layer_punto_per_cantiere.get(cantiere_id)
-        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+        if not _layer_presente(layer):
             return False
         nodo = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
         return nodo is not None and nodo.isVisible()
@@ -116,7 +134,7 @@ class LocalizzazioneManager:
     def set_punto_visibile(self, cantiere_id, visibile):
         """Spunta/toglie la visibilita' del punto -- MAI lo rimuove dal progetto (vedi set_area_visibile)."""
         layer = self._layer_punto_per_cantiere.get(cantiere_id)
-        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+        if not _layer_presente(layer):
             return
         nodo = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
         if nodo is not None:
@@ -134,7 +152,7 @@ class LocalizzazioneManager:
         perde il disegno in corso se si riapre la stessa tavola).
         """
         layer_esistente = self._layer_area_per_cantiere.get(cantiere_id)
-        if layer_esistente is not None and QgsProject.instance().mapLayer(layer_esistente.id()) is not None:
+        if _layer_presente(layer_esistente):
             return layer_esistente
 
         nome = f"{NOME_LAYER_AREA} - {nome_cantiere}"
@@ -154,7 +172,7 @@ class LocalizzazioneManager:
     def layer_area_esiste(self, cantiere_id):
         """True se il layer di disegno e' gia' stato creato e risulta ancora nel progetto."""
         layer = self._layer_area_per_cantiere.get(cantiere_id)
-        return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
+        return _layer_presente(layer)
 
     def is_area_visibile(self, cantiere_id):
         """
@@ -163,7 +181,7 @@ class LocalizzazioneManager:
         tolta conta come non visibile).
         """
         layer = self._layer_area_per_cantiere.get(cantiere_id)
-        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+        if not _layer_presente(layer):
             return False
         nodo = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
         return nodo is not None and nodo.isVisible()
@@ -177,7 +195,7 @@ class LocalizzazioneManager:
         distrutto solo per nasconderlo.
         """
         layer = self._layer_area_per_cantiere.get(cantiere_id)
-        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+        if not _layer_presente(layer):
             return
         nodo = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
         if nodo is not None:
@@ -191,7 +209,7 @@ class LocalizzazioneManager:
     # ------------------------------------------------------------------
     def layer_buffer(self, cantiere_id, nome_cantiere, wkt_buffer):
         layer_esistente = self._layer_buffer_per_cantiere.get(cantiere_id)
-        if layer_esistente is not None and QgsProject.instance().mapLayer(layer_esistente.id()) is not None:
+        if _layer_presente(layer_esistente):
             QgsProject.instance().removeMapLayer(layer_esistente.id())
         nome = f"{NOME_LAYER_BUFFER} - {nome_cantiere}"
         layer = QgsVectorLayer("Polygon?crs=EPSG:4326", nome, "memory")
@@ -213,7 +231,7 @@ class LocalizzazioneManager:
         nessuna area disegnata.
         """
         layer = self._layer_area_per_cantiere.get(cantiere_id)
-        if layer is None or QgsProject.instance().mapLayer(layer.id()) is None:
+        if not _layer_presente(layer):
             return None
         feature = next(layer.getFeatures(), None)
         if feature is None or feature.geometry().isNull():
@@ -235,15 +253,15 @@ class LocalizzazioneManager:
         area_non_salvata = self.layer_area_esiste(cantiere_id) and self.wkt_corrente(cantiere_id) != wkt_iniziale
 
         layer_punto = self._layer_punto_per_cantiere.pop(cantiere_id, None)
-        if layer_punto is not None and QgsProject.instance().mapLayer(layer_punto.id()) is not None:
+        if _layer_presente(layer_punto):
             QgsProject.instance().removeMapLayer(layer_punto.id())
 
         layer_area = self._layer_area_per_cantiere.pop(cantiere_id, None)
-        if layer_area is not None and QgsProject.instance().mapLayer(layer_area.id()) is not None:
+        if _layer_presente(layer_area):
             QgsProject.instance().removeMapLayer(layer_area.id())
 
         layer_buffer = self._layer_buffer_per_cantiere.pop(cantiere_id, None)
-        if layer_buffer is not None and QgsProject.instance().mapLayer(layer_buffer.id()) is not None:
+        if _layer_presente(layer_buffer):
             QgsProject.instance().removeMapLayer(layer_buffer.id())
 
         return area_non_salvata

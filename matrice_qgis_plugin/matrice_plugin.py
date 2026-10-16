@@ -322,10 +322,13 @@ class MatricePlugin:
         QMessageBox.information(self.iface.mainWindow(), "Informazioni su Matrice", f"{nome} - v{versione}\n\n{descrizione}")
 
     def _show_login_dialog(self):
+        username_salvato, password_salvata = self.session.saved_credentials()
         dialog = LoginDialog(
             self.iface.mainWindow(),
-            remember_default=self.session.has_saved_credentials(),
+            remember_default=username_salvato is not None,
             verify_callback=self._verify_login,
+            username_default=username_salvato or "",
+            password_default=password_salvata or "",
         )
         if dialog.exec_():
             # A questo punto il login e' gia' riuscito (_verify_login lo ha
@@ -388,23 +391,40 @@ class MatricePlugin:
         la tavola appena creata -- stesso punto di arrivo di un cantiere
         scelto dall'elenco (handle_open_tavola).
         """
-        dialog = NuovoCantiereDialog(self.iface.mainWindow())
+        token = self.session.access_token
+        try:
+            tipi_consentiti = self.matrice_api.tipi_intervento_consentiti(token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Matrice", str(exc))
+            return
+        if not tipi_consentiti:
+            self.iface.messageBar().pushWarning(
+                "Matrice",
+                "Il profilo collegato non e' abilitato a nessun tipo di lavoro: "
+                "contattare il referente dell'azienda su Matrice.",
+            )
+            return
+
+        dialog = NuovoCantiereDialog(tipi_consentiti, self.iface.mainWindow())
         if not dialog.exec_():
             return
 
         valori = dialog.valori()
-        token = self.session.access_token
 
-        referente = self.matrice_api.trova_utente_per_email(valori["email_referente"], token)
-        if referente is not None:
-            referente_campo_utente_id = referente["id"]
-        else:
+        email_referente = valori["email_referente"]
+        if not email_referente:
             referente_campo_utente_id = self.session.user_id
-            self.iface.messageBar().pushWarning(
-                "Matrice",
-                "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
-                "sull'utente attualmente connesso.",
-            )
+        else:
+            referente = self.matrice_api.trova_utente_per_email(email_referente, token)
+            if referente is not None:
+                referente_campo_utente_id = referente["id"]
+            else:
+                referente_campo_utente_id = self.session.user_id
+                self.iface.messageBar().pushWarning(
+                    "Matrice",
+                    "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
+                    "sull'utente attualmente connesso.",
+                )
 
         try:
             azienda_id = self.matrice_api.azienda_utente_loggato(token)
@@ -420,12 +440,28 @@ class MatricePlugin:
                 "created_by": self.session.user_id,
             }
             nuovo = self.matrice_api.crea_cantiere(campi, token)
-            # Se il referente di campo e' un utente diverso da chi crea il
-            # cantiere, serve anche una riga cantiere_accesso: la RLS su
-            # `cantiere` (has_cantiere_access) mostra la riga solo a chi ha
-            # un accesso esplicito, e il referente non lo ha automaticamente
-            # solo perche' e' indicato in referente_campo_utente_id (stessa
-            # regola della web app, vedi dashboard.js `nuovoCantiere`).
+            # has_cantiere_access() (RLS su `cantiere`) mostra la riga solo
+            # a chi ha ruolo "referente" nella stessa azienda, oppure una
+            # riga esplicita in cantiere_accesso: chi crea il cantiere non
+            # e' detto che sia "referente" (puo' essere un "collaboratore"),
+            # quindi senza questa riga il cantiere resterebbe invisibile
+            # anche a chi l'ha appena creato. Va bene comunque inserirla
+            # anche per un "referente" (vede gia' il cantiere lo stesso,
+            # la riga in piu' non cambia nulla).
+            self.matrice_api.rest.insert(
+                "cantiere_accesso",
+                {
+                    "cantiere_id": nuovo["id"],
+                    "utente_id": self.session.user_id,
+                    "ruolo_accesso": "editor",
+                },
+                token,
+            )
+            # Se il referente di campo indicato e' un utente diverso da chi
+            # crea il cantiere, serve la stessa riga anche per lui: non ha
+            # accesso automatico solo perche' e' indicato in
+            # referente_campo_utente_id (stessa regola della web app, vedi
+            # dashboard.js `nuovoCantiere`).
             if referente_campo_utente_id != self.session.user_id:
                 self.matrice_api.rest.insert(
                     "cantiere_accesso",

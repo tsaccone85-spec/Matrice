@@ -83,6 +83,23 @@ class SupabaseRestClient:
         except _HttpError as exc:
             raise SupabaseRequestError(self._messaggio_semplice(exc)) from exc
 
+    def insert(self, table, fields, access_token):
+        """
+        POST su /rest/v1/<table> con il token dell'utente loggato: come
+        select()/update(), e' la Row Level Security del database a decidere
+        se l'inserimento e' permesso, non il plugin. Ritorna la riga creata
+        (es. serve l'id del cantiere appena creato, vedi
+        matrice_plugin._handle_nuovo_cantiere).
+        """
+        url = f"{self.base_url}/rest/v1/{table}"
+        try:
+            rows = self._request(
+                "POST", url, body=fields, access_token=access_token, prefer="return=representation"
+            )
+        except _HttpError as exc:
+            raise SupabaseRequestError(self._messaggio_semplice(exc)) from exc
+        return rows[0] if rows else None
+
     # ------------------------------------------------------------------
     # Storage -- bucket privati (foto-scavo, documenti, geopackage): le
     # colonne foto_*_url/file_url nelle tabelle NON sono URL completi, sono
@@ -149,6 +166,14 @@ class SupabaseRestClient:
             raise _HttpError(exc.code, message) from exc
         except urllib.error.URLError as exc:
             raise ConnectionError(f"Impossibile raggiungere Matrice: {exc.reason}") from exc
+        except TimeoutError as exc:
+            # Un timeout durante response.read() (corpo della risposta, non
+            # la sola connessione) arriva come TimeoutError "nudo", NON
+            # avvolto in URLError da urllib: senza questo except, il
+            # messaggio tecnico grezzo ("The read operation timed out")
+            # passava cosi' com'e' all'operatore invece del messaggio in
+            # linguaggio semplice (principio generale, sezione 2/8).
+            raise ConnectionError(f"Impossibile raggiungere Matrice: {exc}") from exc
 
     def _messaggio_semplice(self, exc):
         """Mai un errore tecnico grezzo mostrato all'operatore (principio generale, sezione 2/8)."""
