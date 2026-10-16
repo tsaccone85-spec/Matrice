@@ -15,6 +15,23 @@ in scritture su lat/lng tramite trigger lato database.
 """
 
 from qgis.core import Qgis, QgsEditorWidgetSetup, QgsProject, QgsVectorLayer
+from qgis.PyQt import sip
+
+
+def _layer_presente(layer):
+    """
+    True se `layer` esiste ancora nel progetto QGIS corrente.
+
+    Un operatore puo' rimuovere un layer a mano dal pannello Livelli di
+    QGIS (non solo togliendo la spunta dal pannello Matrice): l'oggetto
+    C++ sottostante viene distrutto, ma il wrapper Python resta in
+    _layers_by_cantiere finche' non si richiama questa funzione. Senza
+    `sip.isdeleted()`, chiamare layer.id() su un wrapper il cui oggetto
+    C++ e' gia' stato eliminato lancia RuntimeError invece di poter
+    essere trattato come "non piu' presente" (stesso bug corretto in
+    core/localizzazione_manager.py).
+    """
+    return layer is not None and not sip.isdeleted(layer) and QgsProject.instance().mapLayer(layer.id()) is not None
 
 # view/tabella -> colonna geometria, chiave primaria, nome visualizzato,
 # tipo WKB e SRID (sezione 4, passo 1).
@@ -279,13 +296,13 @@ class LayerManager:
             return None
         for cantiere_id, layers in self._layers_by_cantiere.items():
             rilievo = layers.get("rilievo_geometria")
-            if rilievo is not None and rilievo.id() == layer.id():
+            if _layer_presente(rilievo) and rilievo.id() == layer.id():
                 return cantiere_id
         return None
 
     def is_layer_shown(self, cantiere_id, key):
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
+        return _layer_presente(layer)
 
     def show_layer(self, cantiere_id, key):
         """
@@ -298,7 +315,7 @@ class LayerManager:
         agganciato alla sincronizzazione delle modifiche).
         """
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        if layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None:
+        if _layer_presente(layer):
             return layer, True  # gia' visibile, nessuna nuova azione da fare
 
         layer = self._build_layer(cantiere_id, key)
@@ -316,15 +333,13 @@ class LayerManager:
         """
         layers = self._layers_by_cantiere.pop(cantiere_id, {})
         for layer in layers.values():
-            if QgsProject.instance().mapLayer(layer.id()) is not None:
+            if _layer_presente(layer):
                 QgsProject.instance().removeMapLayer(layer.id())
 
     def hide_layer(self, cantiere_id, key):
         """Rimuove dalla mappa il livello `key` del cantiere (spunta tolta)."""
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        if layer is None:
-            return
-        if QgsProject.instance().mapLayer(layer.id()) is not None:
+        if _layer_presente(layer):
             QgsProject.instance().removeMapLayer(layer.id())
         self._layers_by_cantiere.get(cantiere_id, {}).pop(key, None)
 
