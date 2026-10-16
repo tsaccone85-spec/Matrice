@@ -44,7 +44,6 @@ aggiuntiva (solo http.server della libreria standard).
 import argparse
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import threading
@@ -53,25 +52,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Dentro un bundle PyInstaller sys.executable è l'exe stesso, non Python.
-# Cerca il vero interprete in PATH; serve per lanciare rileva_segni.py.
-def _trova_python() -> str:
-    import shutil
-    if not getattr(sys, 'frozen', False):
-        return sys.executable
-    for nome in ('python', 'python3', 'python.exe', 'python3.exe'):
-        p = shutil.which(nome)
-        if p:
-            return p
-    raise RuntimeError(
-        'Python non trovato nel PATH. Installa Python 3 e aggiungilo al PATH.'
-    )
-
-_PYTHON = _trova_python()
-
 import sys as _sys
 _sys.path.insert(0, SCRIPT_DIR)
 from fonte_satellitare import MASSIMO_STAGIONI
+# Import diretto (non subprocess): rileva_segni.py viene eseguito nello
+# stesso processo/eseguibile, cosi' PyInstaller lo compila dentro l'exe
+# invece di dover distribuire anche questo file in chiaro accanto ad esso.
+import rileva_segni
 
 # ---------------------------------------------------------------------------
 # Gating per piano (lacuna 12)
@@ -181,60 +168,31 @@ def _esegui_job(job_id: str, area_geojson: dict, buffer_m: float, num_acquisizio
         JOBS[job_id]["stato"] = "in_esecuzione"
 
     cartella = tempfile.mkdtemp(prefix="cropmark-locale-")
-    percorso_area = os.path.join(cartella, "cantiere.geojson")
     percorso_gpkg = os.path.join(cartella, "segni_rilevati.gpkg")
     percorso_pdf = os.path.join(cartella, "report.pdf")
-
+    percorso_area = os.path.join(cartella, "cantiere.geojson")
     with open(percorso_area, "w", encoding="utf-8") as f:
         json.dump(area_geojson, f)
 
-    percorso_riepilogo = os.path.join(cartella, "riepilogo.json")
-
-    argomenti = [
-        _PYTHON, os.path.join(SCRIPT_DIR, "rileva_segni.py"),
-        "--cantiere", percorso_area,
-        "--auto",
-        "--buffer-m", str(buffer_m),
-        "--num-acquisizioni", str(num_acquisizioni),
-        "--output", percorso_gpkg,
-        "--output-pdf", percorso_pdf,
-        "--nome-area", "Cantiere Matrice (server locale)",
-        "--banda-red", "1", "--banda-nir", "2",
-        "--qualita", qualita,
-        "--output-riepilogo", percorso_riepilogo,
-    ]
-    # Gating piano: aggiunge filigrana al PDF per il piano free.
-    if filigrana:
-        argomenti += ["--filigrana", filigrana]
-
     try:
-        risultato = subprocess.run(
-            argomenti, cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=600
+        gdf_risultato = rileva_segni.esegui_analisi_automatica(
+            path_cantiere=percorso_area,
+            buffer_m=buffer_m,
+            num_acquisizioni=num_acquisizioni,
+            path_output=percorso_gpkg,
+            path_output_pdf=percorso_pdf,
+            nome_area="Cantiere Matrice (server locale)",
+            banda_red=1,
+            banda_nir=2,
+            qualita=qualita,
+            filigrana=filigrana,
+            auto_tmp_dir=os.path.join(cartella, "auto_download_tmp"),
         )
-        if risultato.returncode != 0 or not os.path.exists(percorso_gpkg) or not os.path.exists(percorso_pdf):
-            raise RuntimeError(f"rileva_segni.py fallito:\n{risultato.stdout}\n{risultato.stderr}")
+        if not os.path.exists(percorso_gpkg) or not os.path.exists(percorso_pdf):
+            raise RuntimeError("rileva_segni non ha prodotto i file di output attesi.")
 
-        n_totali = None
-        n_multidata = None
-        if os.path.exists(percorso_riepilogo):
-            with open(percorso_riepilogo, encoding="utf-8") as f:
-                riepilogo = json.load(f)
-            n_totali = riepilogo.get("n_segni_totali")
-            n_multidata = riepilogo.get("n_segni_multidata")
-        else:
-            # Fallback: parse stdout per compatibilità con versioni precedenti
-            # dello script (rimosso quando --output-riepilogo sarà stabile).
-            for riga in risultato.stdout.splitlines():
-                if riga.strip().startswith("Totale segni rilevati:"):
-                    try:
-                        n_totali = int(riga.split(":")[1].strip())
-                    except (IndexError, ValueError):
-                        pass
-                if "confermati su 2+ date" in riga:
-                    try:
-                        n_multidata = int(riga.split("(")[1].split(" confermati")[0])
-                    except (IndexError, ValueError):
-                        pass
+        n_totali = len(gdf_risultato)
+        n_multidata = int((gdf_risultato.get("n_date", 1) >= 2).sum()) if n_totali > 0 else 0
 
         with JOBS_LOCK:
             JOBS[job_id].update({

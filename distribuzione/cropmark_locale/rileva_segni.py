@@ -712,6 +712,53 @@ def analizza(
     return gdf_finale
 
 
+def esegui_analisi_automatica(
+    path_cantiere: str,
+    buffer_m: float,
+    num_acquisizioni: int,
+    path_output: str | None,
+    path_output_pdf: str | None,
+    nome_area: str,
+    banda_red: int,
+    banda_nir: int,
+    qualita: str,
+    filigrana: str | None,
+    auto_tmp_dir: str = "auto_download_tmp",
+) -> gpd.GeoDataFrame:
+    """Pipeline --auto richiamabile in-process (import diretto), senza
+    passare da subprocess + interprete Python esterno. Usata da
+    server_locale.py quando e' compilato insieme a questo modulo in un
+    unico eseguibile PyInstaller: senza questa funzione, rileva_segni.py
+    dovrebbe comunque essere distribuito come file .py in chiaro per
+    poter essere lanciato come processo separato (vedi CLI/main sotto,
+    che resta disponibile per l'uso da riga di comando / sviluppo)."""
+    import uuid as _uuid
+
+    params = ParametriAnalisi(buffer_m=buffer_m)
+    date_richieste = genera_date_automatiche(num_acquisizioni)
+    cartella_tmp_analisi = os.path.join(auto_tmp_dir, _uuid.uuid4().hex[:8])
+
+    gdf_cantiere_auto = leggi_area_cantiere(path_cantiere)
+    gdf_buffer_auto = crea_buffer(gdf_cantiere_auto, buffer_m)
+    ortofoto_date, path_dtm = scarica_dati_automatici(
+        gdf_buffer_auto.geometry.iloc[0], gdf_buffer_auto.crs,
+        date_richieste, cartella_tmp_analisi, qualita=qualita,
+    )
+
+    return analizza(
+        path_cantiere=path_cantiere,
+        ortofoto_date=ortofoto_date,
+        path_dtm=path_dtm,
+        path_output=path_output,
+        params=params,
+        banda_red=banda_red,
+        banda_nir=banda_nir,
+        path_output_pdf=path_output_pdf,
+        nome_area=nome_area,
+        filigrana=filigrana,
+    )
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
