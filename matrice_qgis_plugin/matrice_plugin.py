@@ -51,6 +51,7 @@ from .ui.login_dialog import LoginDialog
 from .ui.connection_settings_dialog import ConnectionSettingsDialog
 from .ui.gps_import_dialog import GpsImportDialog
 from .ui.nuovo_cantiere_dialog import NuovoCantiereDialog
+from .ui.nuovo_carotaggio_dialog import NuovoCarotaggioDialog
 from .ui.punto_dettaglio_dialog import PuntoDettaglioDialog
 from .ui.buffer_area_dialog import BufferAreaDialog
 from .ui.rettangolo_progettazione_dialog import RettangoloProgettazioneDialog
@@ -60,7 +61,9 @@ from .ui.us_detail_dialog import UsDetailDialog
 # Chiavi LAYER_SOURCES (layer_manager.py) che attivano il menu "Progettazione"
 # della toolbar: un rettangolo (trincea o saggio) si crea solo mentre uno dei
 # due layer e' quello attivo in QGIS (vedi _handle_active_layer_changed).
-CHIAVI_LAYER_PROGETTAZIONE = ("trincea_progettazione", "saggio_progettazione", "survey_ur", "survey_ritrovamento")
+CHIAVI_LAYER_PROGETTAZIONE = (
+    "trincea_progettazione", "saggio_progettazione", "survey_ur", "survey_ritrovamento", "carotaggio",
+)
 
 PLUGIN_DIR = os.path.dirname(__file__)
 
@@ -213,6 +216,8 @@ class MatricePlugin:
         azione_ur.triggered.connect(self._disegna_unita_ricognizione)
         azione_ritrovamento = menu_progettazione.addAction("Rinvenimento…")
         azione_ritrovamento.triggered.connect(self._apri_nuovo_ritrovamento)
+        azione_carotaggio = menu_progettazione.addAction("Carotaggio…")
+        azione_carotaggio.triggered.connect(self._apri_nuovo_carotaggio)
         azione_buffer = menu_progettazione.addAction("Crea buffer area di indagine…")
         azione_buffer.triggered.connect(self._crea_buffer_area)
         menu_progettazione.addSeparator()
@@ -741,6 +746,44 @@ class MatricePlugin:
 
         strumento = PosizionaPuntoMapTool(self.iface.mapCanvas(), layer, attributi, dopo_creazione)
         self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto del rinvenimento.")
+        self.iface.mapCanvas().setMapTool(strumento)
+
+    def _apri_nuovo_carotaggio(self):
+        """
+        Apre il dialog "Nuovo carotaggio" e, alla conferma, attiva lo
+        strumento "un click per posizionare" (core/ritrovamento_progettazione.py,
+        riusato tale e quale: un punto senza rotazione/dimensioni e' lo
+        stesso caso di un rinvenimento) sul layer carotaggio.
+
+        numero_carotaggio/lat/lng li calcola il trigger database
+        (v_carotaggio_qgis_insert, vedi nota nel dialog): qui si passano
+        solo i campi scelti in fase di progettazione (localizzazione,
+        diametro, profondita' prevista, metodo). Esito/stratigrafia/foto
+        restano per la documentazione sul campo (doppio click sul punto,
+        vedi _apri_scheda_carotaggio).
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
+            return
+        layer, _ = self.layer_manager.show_layer(cantiere_id, "carotaggio")
+
+        dialog = NuovoCarotaggioDialog(self.iface.mainWindow())
+        if dialog.exec_() != dialog.Accepted:
+            return
+        attributi = dialog.valori()
+        attributi["cantiere_id"] = cantiere_id
+        attributi["created_by"] = self.session.user_id
+
+        def dopo_creazione(ok):
+            if ok:
+                layer.triggerRepaint()
+                self.iface.messageBar().pushSuccess("Progettazione", "Carotaggio creato.")
+            else:
+                self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
+
+        strumento = PosizionaPuntoMapTool(self.iface.mapCanvas(), layer, attributi, dopo_creazione)
+        self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto del carotaggio.")
         self.iface.mapCanvas().setMapTool(strumento)
 
     def _disegna_unita_ricognizione(self):

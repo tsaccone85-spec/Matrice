@@ -185,6 +185,18 @@ Progettazione (`CHIAVI_LAYER_PROGETTAZIONE` in `matrice_plugin.py`):
   (`core/ritrovamento_progettazione.py`). Tabella `survey_ritrovamento`,
   vista `v_survey_ritrovamento_qgis` con trigger `INSTEAD OF INSERT`
   dedicato che traduce la geometria in `lat`/`lng`.
+- **"Carotaggio..."**: dialog (localizzazione, diametro, profondità
+  prevista, metodo di perforazione) + un click per posizionare il punto --
+  stesso strumento di "Rinvenimento..." (`core/ritrovamento_progettazione.py`,
+  riusato: un punto senza rotazione/dimensioni e' lo stesso caso). Tabella
+  `carotaggio`, vista `v_carotaggio_qgis` con trigger `INSTEAD OF INSERT`
+  dedicato (migrazione `crea_carotaggio_instead_of_insert`, applicata il
+  2026-10-16) che calcola `numero_carotaggio` (max+1 per cantiere) e
+  traduce la geometria in `lat`/`lng`, mirror esatto del trigger di
+  `survey_ritrovamento`. Esito/stratigrafia/foto/falda/note restano per la
+  documentazione sul campo: doppio click sul punto creato apre la stessa
+  scheda di dettaglio già esistente (`ui/punto_dettaglio_dialog.py`,
+  `matrice_plugin._apri_scheda_carotaggio`).
 - **"Crea buffer area di indagine..."**: chiede una distanza (metri) ad
   ogni generazione, calcola un buffer attorno all'area di cantiere
   (riproiezione locale azimutale equidistante) e lo salva su
