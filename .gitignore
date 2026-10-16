@@ -1,1 +1,3 @@
 matrice_qgis_plugin/core/supabase_config.py
+__pycache__/
+*.pyc
