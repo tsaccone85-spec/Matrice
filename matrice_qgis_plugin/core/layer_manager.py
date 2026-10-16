@@ -44,7 +44,13 @@ LAYER_SOURCES = {
         "geometry_column": "geom",
         "key_column": "id_geom",
         "display_name": "Rilievo vettoriale",
-        "wkb_type": Qgis.WkbType.Point,
+        # NON un tipo fisso: rilievo_geometria.tipo_geometria (models/data_model.py)
+        # ammette punto/linea/poligono per US -- un valore qui fisso a Point
+        # farebbe sparire silenziosamente dal layer le US rilevate come linea o
+        # poligono (il provider postgres filtra le righe di tipo diverso da
+        # quello dichiarato nell'URI). Risolto dinamicamente da
+        # _tipo_geometria_rilievo() per ogni cantiere, vedi _build_layer.
+        "wkb_type": None,
         "srid": 4326,
         "campi_nascosti": ("id_geom", "cantiere_id", "us_id", "operatore_id", "sepoltura_id"),
         "espressione_display": "'US ' || \"numero_us\"",
@@ -170,6 +176,21 @@ LAYER_SOURCES = {
 }
 
 
+# GeometryType(geom) di PostGIS -> Qgis.WkbType, per _tipo_geometria_rilievo.
+# Solo le forme semplici: rilievo_geometria non ha mai avuto geometrie multi
+# (sync_handler.py/core/ritrovamento_progettazione.py creano sempre feature
+# singole), ma si accetta comunque un fallback a Unknown per qualunque altro
+# valore imprevisto, invece di far fallire il caricamento del layer.
+_GEOMETRY_TYPE_PER_TIPO_PG = {
+    "POINT": Qgis.WkbType.Point,
+    "LINESTRING": Qgis.WkbType.LineString,
+    "POLYGON": Qgis.WkbType.Polygon,
+    "MULTIPOINT": Qgis.WkbType.MultiPoint,
+    "MULTILINESTRING": Qgis.WkbType.MultiLineString,
+    "MULTIPOLYGON": Qgis.WkbType.MultiPolygon,
+}
+
+
 class LayerManager:
     def __init__(self, connection):
         self.connection = connection
@@ -180,14 +201,46 @@ class LayerManager:
         """Nome del cantiere passato all'ultimo load_cantiere() per questo id, o None se non noto."""
         return self._nome_by_cantiere.get(cantiere_id)
 
+    def _tipo_geometria_rilievo(self, cantiere_id):
+        """
+        Tipo WKB da dichiarare per il layer "Rilievo vettoriale" di questo
+        cantiere, letto dai dati reali invece che fisso a Point (vedi nota
+        su LAYER_SOURCES["rilievo_geometria"]["wkb_type"]):
+
+        - un solo tipo presente -> il suo tipo esatto (il caso comune,
+          nessuna geometria viene filtrata via);
+        - piu' tipi diversi nello stesso cantiere -> Unknown, cosi' il
+          provider postgres non ne scarta nessuno;
+        - nessuna riga ancora (cantiere appena iniziato) -> Point, come
+          prima di questa modifica: un tipo esplicito (anche se "a caso",
+          non essendoci ancora dati con cui sbagliare) evita il fallimento
+          di caricamento che il provider ha con Unknown su un subset SQL
+          vuoto (vedi db_connector.postgis_uri), mantenendo disponibile il
+          layer vuoto pronto per iniziare a digitalizzare.
+        """
+        righe = self.connection.execute_returning(
+            "SELECT DISTINCT GeometryType(geom) AS tipo FROM v_rilievo_geometria_qgis "
+            "WHERE cantiere_id = %s AND geom IS NOT NULL;",
+            (cantiere_id,),
+        )
+        tipi = {riga["tipo"] for riga in righe if riga.get("tipo")}
+        if len(tipi) == 1:
+            return _GEOMETRY_TYPE_PER_TIPO_PG.get(tipi.pop(), Qgis.WkbType.Unknown)
+        if not tipi:
+            return Qgis.WkbType.Point
+        return Qgis.WkbType.Unknown
+
     def _build_layer(self, cantiere_id, key):
         """Costruisce (senza aggiungere in mappa) il layer PostGIS per `key`."""
         opts = LAYER_SOURCES[key]
+        wkb_type = opts["wkb_type"]
+        if wkb_type is None:
+            wkb_type = self._tipo_geometria_rilievo(cantiere_id)
         uri = self.connection.postgis_uri(
             opts["source"],
             geometry_column=opts["geometry_column"],
             key_column=opts["key_column"],
-            wkb_type=opts["wkb_type"],
+            wkb_type=wkb_type,
             srid=opts["srid"],
         )
         # cantiere_id e' un uuid, non un intero: va quotato nel subset SQL.
