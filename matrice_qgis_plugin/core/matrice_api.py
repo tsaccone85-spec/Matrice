@@ -59,19 +59,20 @@ class MatriceApi:
     def list_cantieri_abilitati(self, access_token):
         """
         Cantieri a cui l'utente loggato ha accesso. La riga viene restituita
-        solo se la Row Level Security su cantiere_accesso la consente per
-        questo utente -- non serve rifiltrare lato plugin.
+        solo se la Row Level Security su `cantiere` (has_cantiere_access) la
+        consente per questo utente -- non serve rifiltrare lato plugin.
+
+        Si legge direttamente `cantiere`, non piu' un reverse-join da
+        `cantiere_accesso` (bug corretto: cosi' facendo, un cantiere senza
+        NESSUNA riga in cantiere_accesso restava invisibile anche per un
+        utente "referente", che per regola vede automaticamente tutti i
+        cantieri della propria azienda -- has_cantiere_access lo permette,
+        ma non c'era alcuna riga da cui farlo risalire con quella query).
         """
         rows = self.rest.select(
-            "cantiere_accesso",
-            access_token,
-            params={"select": "cantiere_id,cantiere:cantiere_id(nome_cantiere)"},
+            "cantiere", access_token, params={"select": "id,nome_cantiere"},
         )
-        cantieri = [
-            {"id": row["cantiere_id"], "nome_cantiere": row["cantiere"]["nome_cantiere"]}
-            for row in (rows or [])
-            if row.get("cantiere")
-        ]
+        cantieri = [{"id": row["id"], "nome_cantiere": row["nome_cantiere"]} for row in (rows or [])]
         cantieri.sort(key=lambda c: (c["nome_cantiere"] or "").lower())
         return cantieri
 
