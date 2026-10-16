@@ -322,10 +322,13 @@ class MatricePlugin:
         QMessageBox.information(self.iface.mainWindow(), "Informazioni su Matrice", f"{nome} - v{versione}\n\n{descrizione}")
 
     def _show_login_dialog(self):
+        username_salvato, password_salvata = self.session.saved_credentials()
         dialog = LoginDialog(
             self.iface.mainWindow(),
-            remember_default=self.session.has_saved_credentials(),
+            remember_default=username_salvato is not None,
             verify_callback=self._verify_login,
+            username_default=username_salvato or "",
+            password_default=password_salvata or "",
         )
         if dialog.exec_():
             # A questo punto il login e' gia' riuscito (_verify_login lo ha
