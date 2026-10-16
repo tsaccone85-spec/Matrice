@@ -112,18 +112,18 @@ class SupabaseRestClient:
         except urllib.error.URLError as exc:
             return None, f"Rete: {exc.reason}"
 
-    def insert(self, table, fields, access_token):
+    def insert(self, table, fields, access_token, prefer="return=representation"):
         """
         POST su /rest/v1/<table> con il token dell'utente loggato: come
         select()/update(), e' la Row Level Security del database a
         decidere se la scrittura e' permessa, non il plugin. Ritorna la
-        riga appena creata (Prefer: return=representation).
+        riga appena creata, o None con `prefer` che non richiede
+        "return=representation" (es. un upsert con "resolution=
+        merge-duplicates,return=minimal", vedi core/copernicus_sync.py).
         """
         url = f"{self.base_url}/rest/v1/{table}"
         try:
-            rows = self._request(
-                "POST", url, body=fields, access_token=access_token, prefer="return=representation"
-            )
+            rows = self._request("POST", url, body=fields, access_token=access_token, prefer=prefer)
         except _HttpError as exc:
             raise SupabaseRequestError(self._messaggio_semplice(exc)) from exc
         return rows[0] if rows else None

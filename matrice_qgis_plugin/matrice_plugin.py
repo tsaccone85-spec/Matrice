@@ -18,6 +18,7 @@ from qgis.PyQt.QtWidgets import QAction, QDockWidget, QFileDialog, QMenu, QMessa
 
 from .core.auth import SessionManager
 from .core.basemap_manager import BasemapManager
+from .core import copernicus_sync
 from .core.db_connector import MatriceConnection
 from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
@@ -345,6 +346,11 @@ class MatricePlugin:
 
     def _dopo_login_riuscito(self):
         """Sezione 2: popola l'elenco cantieri e mostra il pannello, dopo un login gia' verificato."""
+        # Sincronizza su Matrice le credenziali Copernicus Data Space gia'
+        # configurate per carte-locale/cropmark-locale (se presenti nel
+        # registro Windows): best effort, non blocca mai il login (vedi
+        # core/copernicus_sync.py).
+        copernicus_sync.sincronizza_su_matrice(self.session)
         try:
             cantieri = self.matrice_api.list_cantieri_abilitati(self.session.access_token)
         except Exception as exc:

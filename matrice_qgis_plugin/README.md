@@ -36,6 +36,31 @@ Nuove, create per questo plugin (migrazioni gia' applicate su Supabase):
   attive" di sezione 8; non esisteva in produzione, e' stato aggiunto con
   una migrazione additiva dedicata
 
+**Ancora da creare su Supabase** (il codice del plugin la usa gia', ma la
+migrazione va applicata a parte da chi gestisce il database -- non e' in
+questo repository):
+- `utente_credenziali_copernicus` (`core/copernicus_sync.py`) -- sincronizza
+  le credenziali OAuth Copernicus Data Space (gia' configurate
+  dall'operatore per gli strumenti esterni "carte-locale"/"cropmark-
+  locale", lette dal registro Windows HKCU\Environment) al login riuscito
+  nel plugin, cosi' vanno inserite una volta sola. Finche' la tabella non
+  esiste la sincronizzazione fallisce silenziosamente (try/except, mai
+  bloccante per il login):
+  ```sql
+  create table utente_credenziali_copernicus (
+      utente_id uuid primary key references utente(id) on delete cascade,
+      copernicus_client_id text,
+      copernicus_client_secret text,
+      aggiornato_il timestamptz not null default now()
+  );
+  alter table utente_credenziali_copernicus enable row level security;
+  create policy "solo il proprietario" on utente_credenziali_copernicus
+      for all using (utente_id = auth.uid()) with check (utente_id = auth.uid());
+  ```
+  Senza la policy RLS sopra, `copernicus_client_secret` sarebbe leggibile
+  da chiunque abbia un token valido: e' un segreto OAuth, non un dato
+  pubblico come `cantiere.nome_cantiere`.
+
 **Non esistono** (e non vanno mai referenziate nel codice): una tabella
 `fase` a se stante (`fase` e' un campo testo libero su `us`), un campo
 `us.tipo_us` (il campo reale si chiama `definizione`), un campo diretto
