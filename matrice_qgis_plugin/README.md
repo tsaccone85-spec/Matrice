@@ -213,6 +213,31 @@ sistema di riferimento personale dell'utente loggato
 `app/js/schema.js`) -- solo visualizzazione/digitazione, l'archiviazione
 resta sempre WGS84/4326.
 
+## Export punti per GNSS (Stonex/Topcon) -- toolbar
+
+"Esporta punti per GNSS (CSV)…" (`core/export_gnss.py`,
+`matrice_plugin._handle_export_gnss`): vertici di trincee/saggi
+(`trincea_progettazione`/`saggio_progettazione`, tutti i 4 vertici del
+rettangolo, non il centro) + punti dei carotaggi del cantiere aperto, in
+CSV **PNEZD con intestazione** (`Punto,Nord,Est,Quota,Descrizione`) --
+formato de facto riconosciuto sia da Topcon MAGNET Field che da Stonex
+Cube-a/SurvCE, verificati non condividere un ordine fisso Nord/Est tra i
+due: la riga di intestazione lascia che sia l'operatore a mappare le
+colonne nella finestra di import del controller (entrambi i software la
+supportano), invece di sperare che l'ordine "a occhio" sia quello giusto.
+
+Coordinate nel sistema di riferimento personale dell'utente loggato
+(`core/sistema_riferimento.py`, lo stesso su cui si digitalizza in
+QGIS), non WGS84 -- un ricevitore GNSS per lo stakeout si aspetta
+Nord/Est in un sistema piano, non lat/lon in gradi. Se il sistema
+personale dell'utente e' geografico (id 1, EPSG:4326), l'export avvisa
+esplicitamente invece di scrivere lat/lng silenziosamente in quelle
+colonne.
+
+Quota: assente per trincee/saggi (nessuna colonna Z su quelle tabelle,
+poligoni digitalizzati in piano) -- lasciata vuota, non azzerata. Per i
+carotaggi si usa `quota_slm` se già nota.
+
 ## Cosa resta da completare (segnato con `# TODO` nel codice)
 
 1. **`core/output_generator.py`**: `_add_map_item` e

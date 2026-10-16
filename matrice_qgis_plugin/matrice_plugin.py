@@ -20,6 +20,7 @@ from .core.auth import SessionManager
 from .core.basemap_manager import BasemapManager
 from .core import copernicus_sync
 from .core.db_connector import MatriceConnection
+from .core import export_gnss
 from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
 from .core.join_elenchi import aggiungi_join_elenchi
@@ -200,6 +201,15 @@ class MatricePlugin:
         self.toolbar.addAction(importa_area_action)
         self.iface.addPluginToMenu("&Matrice", importa_area_action)
         self.actions.append(importa_area_action)
+
+        # Export punti di progettazione (trincee/saggi/carotaggi) per
+        # stakeout su ricevitore GNSS (Stonex/Topcon) -- sezione 4/9.
+        icona_export_gnss = QgsApplication.getThemeIcon("/mActionSharingExport.svg")
+        export_gnss_action = QAction(icona_export_gnss, "Esporta punti per GNSS (CSV)…", self.iface.mainWindow())
+        export_gnss_action.triggered.connect(self._handle_export_gnss)
+        self.toolbar.addAction(export_gnss_action)
+        self.iface.addPluginToMenu("&Matrice", export_gnss_action)
+        self.actions.append(export_gnss_action)
 
         # Menu "Progettazione" (Trincea/Saggio/Ruota): abilitato solo mentre
         # e' attivo uno dei due layer Progettazione (vedi
@@ -1156,6 +1166,58 @@ class MatricePlugin:
         layer.triggerRepaint()
         self._apply_area_style(layer)
         self.iface.messageBar().pushSuccess("Matrice", "Area dell'intervento importata e salvata.")
+
+    def _handle_export_gnss(self):
+        """
+        Azione toolbar "Esporta punti per GNSS (CSV)…": vertici di
+        trincee/saggi + punti dei carotaggi del cantiere aperto, in CSV
+        PNEZD (core/export_gnss.py) per lo stakeout su un ricevitore
+        Stonex o Topcon -- nessuna scrittura su Matrice, solo lettura dei
+        layer gia' caricati.
+
+        Le coordinate sono nel sistema di riferimento personale
+        dell'utente loggato (lo stesso su cui si digitalizza in QGIS),
+        non WGS84: un ricevitore GNSS per lo stakeout si aspetta
+        Nord/Est in un sistema piano.
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            self._show_warning("Aprire prima la tavola di un cantiere.")
+            return
+
+        try:
+            sr_id = self.matrice_api.sistema_riferimento_utente_loggato(self.session.access_token)
+        except Exception as exc:
+            self._show_warning(str(exc))
+            return
+        epsg = SISTEMI_RIFERIMENTO_EPSG.get(sr_id, 4326)
+        if epsg == 4326:
+            self.iface.messageBar().pushWarning(
+                "Matrice",
+                "Il tuo sistema di riferimento personale e' geografico (gradi, non un sistema piano): "
+                "Nord/Est nel CSV saranno lat/lng, non adatti allo stakeout. Impostane uno metrico "
+                "nel tuo profilo su Matrice prima di esportare.",
+            )
+
+        righe = export_gnss.genera_righe(cantiere_id, self.layer_manager, epsg)
+        if not righe:
+            self._show_warning("Nessun punto da esportare: nessuna trincea, saggio o carotaggio disegnato per questo cantiere.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self.iface.mainWindow(), "Esporta punti per GNSS", "", "CSV (*.csv)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".csv"):
+            path += ".csv"
+
+        try:
+            export_gnss.scrivi_csv(path, righe)
+        except OSError as exc:
+            self._show_warning(f"Impossibile scrivere il file: {exc}")
+            return
+        self.iface.messageBar().pushSuccess("Matrice", f"Esportati {len(righe)} punti in '{path}'.")
 
     def handle_stampa_localizzazione(self, cantiere_id):
         """
