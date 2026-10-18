@@ -139,6 +139,19 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "created_by", "attributi"),
         "espressione_display": "coalesce(\"nome\", \"codice_norma\", 'Vincolo')",
     },
+    # Confini comunali ISTAT toccati dall'area di intervento (migrazione
+    # 0078_confini_comunali.sql), salvati dal pannello "Confini comunali" di
+    # Analisi preventiva dell'app web (app/js/tool-confini-comunali.js).
+    "progettazione_confine_comunale": {
+        "source": "v_progettazione_confine_comunale_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - confini comunali",
+        "wkb_type": Qgis.WkbType.MultiPolygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"nome\"",
+    },
     # Trincee e Saggi del flusso Progettazione Archeologica (migrazione
     # 0068_trincea_saggio_progettazione.sql): rettangoli creati dal menu
     # "Progettazione" della toolbar (core/rettangolo_progettazione.py), non

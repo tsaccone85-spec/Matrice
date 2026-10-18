@@ -32,6 +32,7 @@ from .core.layer_manager import LAYER_SOURCES, LayerManager
 _GRUPPO_LIVELLI = {
     "progettazione_cropmark": "Progettazione",
     "progettazione_vincolo": "Progettazione",
+    "progettazione_confine_comunale": "Progettazione",
     "trincea_progettazione": "Progettazione",
     "saggio_progettazione": "Progettazione",
 }
