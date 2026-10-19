@@ -766,7 +766,7 @@ class MatricePlugin:
 
         def dopo_creazione(ok):
             if ok:
-                layer.triggerRepaint()
+                strumento.layer.triggerRepaint()
                 self.iface.messageBar().pushSuccess("Progettazione", "Carotaggio creato.")
             else:
                 self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
@@ -824,7 +824,7 @@ class MatricePlugin:
 
         def dopo_creazione(ok):
             if ok:
-                layer.triggerRepaint()
+                strumento.layer.triggerRepaint()
                 self.iface.messageBar().pushSuccess("Progettazione", "Rinvenimento creato.")
             else:
                 self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")

@@ -7,7 +7,7 @@ INSTEAD OF INSERT (migrazione 0070) che la traduce in lat/lng sulla
 tabella reale.
 """
 
-from qgis.core import QgsFeature, QgsGeometry
+from qgis.core import QgsFeature, QgsGeometry, QgsProject
 from qgis.gui import QgsMapTool
 
 from .vista_cantiere import punto_canvas_in_wgs84
@@ -43,6 +43,7 @@ class PosizionaPuntoMapTool(QgsMapTool):
         super().__init__(canvas)
         self.canvas = canvas
         self.layer = layer
+        self._layer_id = layer.id()
         self.attributi = attributi
         self.on_creato = on_creato
         self.on_annullato = on_annullato
@@ -57,9 +58,29 @@ class PosizionaPuntoMapTool(QgsMapTool):
         elif self.on_annullato:
             self.on_annullato()
 
+    def _layer_valido(self):
+        """
+        Il layer puo' essere stato ricreato/rimosso dopo l'attivazione dello
+        strumento (ricarica del progetto, toggle Progettazione): riallinea
+        `self.layer` al layer vivo con lo stesso id. False se non esiste piu'.
+        """
+        from qgis.PyQt import sip
+        if not sip.isdeleted(self.layer):
+            return True
+        vivo = QgsProject.instance().mapLayer(self._layer_id)
+        if vivo is None:
+            return False
+        self.layer = vivo
+        return True
+
     def canvasReleaseEvent(self, event):
         from qgis.PyQt.QtCore import Qt
         if event.button() == Qt.RightButton:
+            self._termina()
+            return
+        if not self._layer_valido():
+            if self.on_errore:
+                self.on_errore()
             self._termina()
             return
         punto_canvas = self.toMapCoordinates(event.pos())

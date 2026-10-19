@@ -96,8 +96,11 @@ class SyncHandler:
         (validazione lato dock widget, non qui) -- qui si assume gia' presente
         nell'attributo us_id della feature.
         """
+        # Layer senza campo us_id (es. Progettazione, Area di cantiere): niente
+        # vincolo di appartenenza, si registra solo la creazione.
+        ha_us_id = layer.fields().indexOf("us_id") >= 0
         for feature in added_features:
-            if not feature["us_id"]:
+            if ha_us_id and not feature["us_id"]:
                 raise ValueError(
                     "Geometria senza US di appartenenza: selezionare la US prima di salvare."
                 )
