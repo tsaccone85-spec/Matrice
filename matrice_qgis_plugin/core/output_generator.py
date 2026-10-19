@@ -14,6 +14,15 @@ SCALE_THRESHOLDS = [
     (float("inf"), 200),  # > 50 m -> 1:200
 ]
 
+# Sequenza di scale da provare per la Tavola 2, dalla piu' dettagliata alla
+# piu' larga: si usa la prima che fa entrare il contenuto in un unico A0.
+SCALE_SEQUENCE_TAVOLA2 = [1000, 1200, 1500, 2000]
+
+# Formato A0 in millimetri (orientamento verticale; per il confronto si
+# considerano entrambi gli orientamenti, dato che il layout puo' essere
+# ruotato in orizzontale).
+FOGLIO_A0_MM = (841, 1189)
+
 
 class OutputGenerator:
     def __init__(self, connection):
@@ -26,6 +35,33 @@ class OutputGenerator:
             if dimensione_max < soglia:
                 return scala
         return SCALE_THRESHOLDS[-1][1]
+
+    def entra_in_foglio(self, extent, scala, dimensione_foglio_mm=FOGLIO_A0_MM):
+        """
+        True se il contenuto dell'extent (in metri), stampato alla scala
+        indicata (1:scala), entra in un unico foglio di dimensione_foglio_mm,
+        in uno qualsiasi dei due orientamenti (verticale/orizzontale).
+        """
+        larghezza_mm = extent.width() * 1000 / scala
+        altezza_mm = extent.height() * 1000 / scala
+        foglio_a, foglio_b = dimensione_foglio_mm
+        entra_verticale = larghezza_mm <= foglio_a and altezza_mm <= foglio_b
+        entra_orizzontale = larghezza_mm <= foglio_b and altezza_mm <= foglio_a
+        return entra_verticale or entra_orizzontale
+
+    def find_scala_tavola2(self, extent, scale_sequence=None, dimensione_foglio_mm=FOGLIO_A0_MM):
+        """
+        Tavola 2: trova la prima scala della sequenza (dalla piu' dettagliata
+        alla piu' larga) che fa entrare l'extent in un unico foglio A0.
+        Se nessuna scala della sequenza basta, ritorna l'ultima (la piu'
+        larga) come fallback, perche' e' comunque la stampa piu' compatta
+        disponibile.
+        """
+        sequenza = scale_sequence or SCALE_SEQUENCE_TAVOLA2
+        for scala in sequenza:
+            if self.entra_in_foglio(extent, scala, dimensione_foglio_mm):
+                return scala
+        return sequenza[-1]
 
     def generate_rilievo_per_fasi(self, layers, fasi_selezionate, scala=None, singola_fase=False):
         """
