@@ -474,7 +474,17 @@ class MatricePlugin:
                     token,
                 )
         except Exception as exc:
-            self.iface.messageBar().pushCritical("Matrice", str(exc))
+            # La Progettazione Archeologica si crea solo con piano Pro/Team: lo
+            # impone la RLS di `cantiere` (policy progettazione_piano_pro_team,
+            # migrazione 0080), qui si traduce l'errore in un messaggio chiaro.
+            if "progettazione_piano_pro_team" in str(exc):
+                self.iface.messageBar().pushWarning(
+                    "Matrice",
+                    "La Progettazione Archeologica e' inclusa nei piani "
+                    "Professionista e Aziendale: il piano dell'azienda non la prevede.",
+                )
+            else:
+                self.iface.messageBar().pushCritical("Matrice", str(exc))
             return
 
         self.handle_open_tavola(nuovo["id"], nuovo["nome_cantiere"])
