@@ -15,6 +15,15 @@ la regola di business (quota manuale vs. ricalcolo da DEM) e' diversa.
 
 import datetime
 
+# Valori ammessi da us_storico_modifiche_tabella_check (verificato in produzione).
+TABELLE_CON_STORICO = frozenset((
+    "us", "rilievo_geometria", "rilievo_quota", "sepoltura",
+    "carotaggio", "colonna_stratigrafica", "sezione_prospetto",
+    # Layer Progettazione (migrazione 0085)
+    "trincea_progettazione", "saggio_progettazione", "carotaggio_progettazione",
+    "survey_ur", "survey_ritrovamento", "buffer_progettazione",
+    "progettazione_cropmark", "progettazione_vincolo",
+))
 
 class SyncHandler:
     def __init__(self, connection, session):
@@ -140,6 +149,8 @@ class SyncHandler:
         return righe[0]["geom_wkt"]
 
     def _log_modifica(self, tabella, record_id, campo, valore_precedente, valore_nuovo, tipo_operazione):
+        if tabella not in TABELLE_CON_STORICO:
+            return  # fuori dal check us_storico_modifiche_tabella_check (es. layer Progettazione)
         self.connection.execute(
             """
             INSERT INTO us_storico_modifiche

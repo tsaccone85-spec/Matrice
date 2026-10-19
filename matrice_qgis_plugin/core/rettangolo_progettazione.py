@@ -28,6 +28,10 @@ from qgis.gui import QgsMapTool
 from .vista_cantiere import punto_canvas_in_wgs84
 
 
+# Dettaglio dell'ultimo commit fallito, mostrato da matrice_plugin.py.
+ULTIMO_ERRORE_COMMIT = {"testo": ""}
+
+
 def crea_geometria_rettangolo(centro_wgs84, larghezza_m, lunghezza_m, angolo_gradi=0):
     """
     Rettangolo larghezza_m x lunghezza_m, centrato su `centro_wgs84`
@@ -83,7 +87,13 @@ def crea_feature_rettangolo(layer, centro_wgs84, larghezza_m, lunghezza_m, attri
         layer.startEditing()
     ok = layer.addFeature(feature)
     if ok and not era_editabile:
-        layer.commitChanges()
+        # Esito del commit NON ignorabile: se il database rifiuta l'insert
+        # (RLS, vincoli, trigger) l'elemento non esiste, anche se addFeature
+        # in locale e' riuscito.
+        ok = layer.commitChanges()
+        if not ok:
+            ULTIMO_ERRORE_COMMIT["testo"] = "; ".join(layer.commitErrors())
+            layer.rollBack()
     return ok
 
 

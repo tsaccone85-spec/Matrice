@@ -13,6 +13,10 @@ from qgis.gui import QgsMapTool
 from .vista_cantiere import punto_canvas_in_wgs84
 
 
+# Dettaglio dell'ultimo commit fallito, mostrato da matrice_plugin.py.
+ULTIMO_ERRORE_COMMIT = {"testo": ""}
+
+
 def crea_feature_ritrovamento(layer, punto_wgs84, attributi):
     """Inserisce un punto in `layer` (editabile, PostGIS) su `punto_wgs84` (QgsPointXY EPSG:4326)."""
     feature = QgsFeature(layer.fields())
@@ -26,7 +30,13 @@ def crea_feature_ritrovamento(layer, punto_wgs84, attributi):
         layer.startEditing()
     ok = layer.addFeature(feature)
     if ok and not era_editabile:
-        layer.commitChanges()
+        # Esito del commit NON ignorabile: se il database rifiuta l'insert
+        # (RLS, vincoli, trigger) l'elemento non esiste, anche se addFeature
+        # in locale e' riuscito.
+        ok = layer.commitChanges()
+        if not ok:
+            ULTIMO_ERRORE_COMMIT["testo"] = "; ".join(layer.commitErrors())
+            layer.rollBack()
     return ok
 
 

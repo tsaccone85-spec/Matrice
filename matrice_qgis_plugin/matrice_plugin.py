@@ -716,7 +716,7 @@ class MatricePlugin:
                 layer.triggerRepaint()
                 self.iface.messageBar().pushSuccess("Progettazione", f"{valori['nome']} creato: clicca per selezionarlo e ruotarlo se serve.")
             else:
-                self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
+                self.iface.messageBar().pushWarning("Progettazione", self._messaggio_creazione_fallita())
 
         strumento = PosizionaRettangoloMapTool(
             self.iface.mapCanvas(), layer, larghezza_m, lunghezza_m, valori, dopo_creazione
@@ -772,11 +772,20 @@ class MatricePlugin:
                 strumento.layer.triggerRepaint()
                 self.iface.messageBar().pushSuccess("Progettazione", "Carotaggio creato.")
             else:
-                self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
+                self.iface.messageBar().pushWarning("Progettazione", self._messaggio_creazione_fallita())
 
         strumento = PosizionaPuntoMapTool(self.iface.mapCanvas(), layer, attributi, dopo_creazione)
         self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto del carotaggio (Esc o tasto destro per finire).")
         self.iface.mapCanvas().setMapTool(strumento)
+
+    @staticmethod
+    def _messaggio_creazione_fallita():
+        """"Creazione non riuscita" + motivo del database, se noto (ultimo commit fallito)."""
+        from .core import rettangolo_progettazione, ritrovamento_progettazione
+        dettaglio = rettangolo_progettazione.ULTIMO_ERRORE_COMMIT["testo"] or ritrovamento_progettazione.ULTIMO_ERRORE_COMMIT["testo"]
+        rettangolo_progettazione.ULTIMO_ERRORE_COMMIT["testo"] = ""
+        ritrovamento_progettazione.ULTIMO_ERRORE_COMMIT["testo"] = ""
+        return f"Creazione non riuscita: {dettaglio}" if dettaglio else "Creazione non riuscita."
 
     def _apri_nuovo_ritrovamento(self):
         """
@@ -830,7 +839,7 @@ class MatricePlugin:
                 strumento.layer.triggerRepaint()
                 self.iface.messageBar().pushSuccess("Progettazione", "Rinvenimento creato.")
             else:
-                self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
+                self.iface.messageBar().pushWarning("Progettazione", self._messaggio_creazione_fallita())
 
         strumento = PosizionaPuntoMapTool(self.iface.mapCanvas(), layer, attributi, dopo_creazione)
         self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto del rinvenimento.")
