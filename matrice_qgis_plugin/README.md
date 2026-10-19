@@ -132,12 +132,68 @@ dello stesso colore ne' facilmente confondibili tra loro.
   solo le USM) definite in `config/quick_views.json` e applicate da
   `core/quick_views.py`, sui campi reali della vista
   `v_rilievo_geometria_qgis`
+- "Unisci dati elenchi" (toolbar): con il layer "Rilievo vettoriale" di un
+  cantiere attivo selezionato, aggancia le schede US di Matrice al rilievo
+  sul numero US tramite un join QGIS in sola lettura (campi con prefisso
+  `us_`, es. `us_definizione`); nessuna scrittura su Matrice
+  (`core/join_elenchi.py`)
 - Import GPS differenziale: CSV, GPX (waypoint), SHP e DXF di
   post-processamento, con dialogo dedicato (pulsante "Importa rilievo
   GPS..." nel dock -> `ui/gps_import_dialog.py`): formato riconosciuto
   dall'estensione del file, anteprima degli abbinamenti punto-US prima di
   scrivere, nessuna scrittura su Matrice senza conferma esplicita
   (`core/gps_import.py`)
+
+## Menu "Progettazione" (toolbar, aggiornato 2026-10-19, v0.2.0)
+
+Il bottone "Progettazione" si abilita all'apertura della tavola di un
+cantiere. Le voci che creano o modificano sono attive solo in un cantiere
+di Progettazione **non chiuso** (`_aggiorna_menu_progettazione` in
+`matrice_plugin.py`):
+
+- **"Trincea..."/"Saggio..."**: chiede larghezza/lunghezza/profondita', poi
+  posizionamento CONTINUO con click sulla mappa (stesso elemento ripetuto
+  sul layer giusto; Esc o tasto destro per finire)
+  (`core/rettangolo_progettazione.py`). Tabelle `trincea_progettazione`/
+  `saggio_progettazione`.
+- **"Unita' di Ricognizione (UR)..."**: poligono libero, editing nativo
+  QGIS. Tabella `survey_ur`.
+- **"Carotaggio..."**: carotaggio PREVISTO dalla progettazione, click
+  continuo. Tabella PROPRIA `carotaggio_progettazione` (vista
+  `v_carotaggio_progettazione_qgis`, codice CAR-01, CAR-02... automatico),
+  separata da `carotaggio` della Lettura carotaggi.
+- **"Crea buffer area di indagine..."**: buffer attorno all'area di cantiere
+  salvato su `cantiere.area_buffer_geom_wkt`.
+- **"Sposta elemento"/"Ruota elemento"**: strumenti nativi QGIS.
+- **Rinvenimenti**: NON si creano da QGIS (arrivano dall'app da campo); da
+  QGIS si possono solo spostare/modificare (trigger INSTEAD OF UPDATE su
+  `v_survey_ritrovamento_qgis`, INSERT revocato a `qgis_rilievo`).
+- **"Chiudi progettazione..."**: segna `cantiere.stato_progettazione =
+  'completato'` (stand-by, riapribile con "Riapri progettazione") e propone
+  il flusso a valle: **Lettura carotaggi** (`tipo_intervento='carotaggi'`) o
+  **Assistenza in corso d'opera** (`'sorveglianza'`). Il cantiere a valle
+  nasce con `cantiere.progettazione_origine_id` e mostra in SOLA LETTURA
+  (gruppo "Da progettazione (sola lettura)") i carotaggi previsti oppure
+  trincee e saggi di progetto (`LayerManager.carica_riferimento`,
+  `RIFERIMENTI_PER_TIPO_INTERVENTO`). Per cantieri gia' esistenti:
+  "Collega progettazione di riferimento...".
+
+I livelli del flusso stanno nel gruppo "Progettazione" dell'albero livelli
+(`CHIAVI_GRUPPO_PROGETTAZIONE` in `core/layer_manager.py`); il layer
+"Carotaggi" della Lettura carotaggi resta fuori.
+
+All'apertura di un cantiere la mappa si ingrandisce sul cantiere
+(`core/vista_cantiere.py`: evita "Point outside of projection domain" a
+scala mondiale) e il CRS di progetto si imposta sul sistema di riferimento
+personale dell'utente (`core/sistema_riferimento.py`); l'archiviazione
+resta sempre WGS84/4326.
+
+### Database (migrazioni applicate sul progetto Supabase)
+
+`carotaggio_progettazione` (+ viste `_qgis`/`_app`), colonna
+`cantiere.progettazione_origine_id`, trigger che compilano
+`created_at`/`updated_at` quando QGIS invia NULL (`imposta_timestamp_se_null`),
+default delle colonne delle viste `*_qgis`, permessi `qgis_rilievo`.
 
 ## Cosa resta da completare (segnato con `# TODO` nel codice)
 
@@ -209,15 +265,25 @@ precompilato di default, non va toccato:
 3. Creare `core/supabase_config.py` (non incluso nel repository di proposito,
    vedi `core/supabase_config.py.example`).
 4. Installare la dipendenza mancante (`psycopg2`) PRIMA di attivare il
-   plugin: da QGIS, Plugin -> Console Python, poi:
-   ```python
-   exec(open(r"PERCORSO/matrice_qgis_plugin/scripts/install_dependencies.py").read())
-   ```
-   (sostituire PERCORSO con il percorso reale della cartella del plugin).
-   Eseguire da dentro QGIS, non con un Python esterno: su Windows in
-   particolare, se ne possono trovare installati diversi sulla stessa
-   macchina, e psycopg2 deve finire in quello usato DA QGIS. Riavviare QGIS
-   al termine.
+   plugin. Due modi, stesso risultato:
+   - **Windows, un doppio clic (consigliato per chi non e' sviluppatore):**
+     eseguire `scripts/installa_dipendenze_windows.bat`. Cerca da solo
+     l'installazione di QGIS sul PC (sia il pacchetto standalone da
+     qgis.org, sia OSGeo4W) e lancia il pip del Python usato DA QGIS.
+     Non e' firmato digitalmente: Windows SmartScreen puo' avvisare al
+     primo avvio ("Ulteriori informazioni" -> "Esegui comunque"). Se non
+     trova QGIS automaticamente, lo dice e propone il metodo manuale.
+   - **Manuale (qualunque sistema operativo):** da QGIS, Plugin -> Console
+     Python, poi:
+     ```python
+     exec(open(r"PERCORSO/matrice_qgis_plugin/scripts/install_dependencies.py").read())
+     ```
+     (sostituire PERCORSO con il percorso reale della cartella del plugin).
+     Eseguire da dentro QGIS, non con un Python esterno: su Windows in
+     particolare, se ne possono trovare installati diversi sulla stessa
+     macchina, e psycopg2 deve finire in quello usato DA QGIS.
+
+   In entrambi i casi, riavviare QGIS al termine.
 5. In QGIS: Estensioni -> Gestione estensioni -> Installate -> attivare
    "Matrice - Rilievo di Scavo".
 6. Alla prima apertura del pannello Matrice, la schermata di configurazione

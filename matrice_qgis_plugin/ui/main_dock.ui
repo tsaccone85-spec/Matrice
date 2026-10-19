@@ -16,9 +16,29 @@
       <widget class="QComboBox" name="cantiereCombo"/>
      </item>
      <item>
+      <widget class="QPushButton" name="aggiornaCantieriButton">
+       <property name="text">
+        <string>⟳ Aggiorna</string>
+       </property>
+       <property name="toolTip">
+        <string>Rilegge da Matrice l'elenco dei cantieri abilitati (es. dopo averne creato uno dall'app web o da un'altra sessione QGIS).</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="apriTavolaButton">
        <property name="text">
         <string>Visualizza dati intervento</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="nuovoCantiereButton">
+       <property name="text">
+        <string>Nuovo cantiere...</string>
+       </property>
+       <property name="toolTip">
+        <string>Crea su Matrice un nuovo cantiere (sezione 4, "Crea cantiere da QGIS").</string>
        </property>
       </widget>
      </item>

@@ -8,14 +8,14 @@ plugin PyQGIS").
 """
 
 import os
+import uuid
 
 import configparser
 
-from qgis.core import QgsFeatureRequest, QgsGeometry, QgsProject, QgsRectangle
+from qgis.core import QgsApplication, QgsCoordinateReferenceSystem, QgsFeature, QgsFeatureRequest, QgsGeometry, QgsProject, QgsRectangle
 from qgis.gui import QgsMapTool
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
-from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QDockWidget, QFileDialog, QMessageBox
+from qgis.PyQt.QtWidgets import QAction, QDockWidget, QFileDialog, QMenu, QMessageBox, QToolButton
 
 from .core.auth import SessionManager
 from .core.basemap_manager import BasemapManager
@@ -24,10 +24,28 @@ from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
 from .core.join_elenchi import aggiungi_join_elenchi
 from .core.layer_manager import LAYER_SOURCES, LayerManager
-from .core.localizzazione_manager import LocalizzazioneManager
+
+# Raggruppamento del pannello "Livelli del cantiere" per flusso di lavoro
+# (chiesto da Tommaso, 2026-10-13): i livelli provenienti dalla fase di
+# progettazione (cropmark, trincee, saggi) stanno sotto un unico gruppo
+# "Progettazione" invece di restare sparsi fra gli altri livelli scavo.
+# Chiave non presente = livello non raggruppato, resta in cima come prima.
+_GRUPPO_LIVELLI = {
+    "progettazione_cropmark": "Progettazione",
+    "progettazione_vincolo": "Progettazione",
+    "progettazione_confine_comunale": "Progettazione",
+    "trincea_progettazione": "Progettazione",
+    "saggio_progettazione": "Progettazione",
+    "carotaggio_progettazione": "Progettazione",
+    "buffer_progettazione": "Progettazione",
+}
+from .core.localizzazione_manager import LocalizzazioneManager, calcola_buffer_wkt
 from .core.matrice_api import MatriceApi
 from .core.point_position_sync import PointPositionSyncHandler
 from .core.print_layout_manager import PrintLayoutManager
+from .core.rettangolo_progettazione import PosizionaRettangoloMapTool
+from .core.ritrovamento_progettazione import PosizionaPuntoMapTool
+from .core.sistema_riferimento import SISTEMI_RIFERIMENTO_EPSG
 from .core.sync_handler import SyncHandler
 from .core.style_manager import StyleManager
 from .core.quick_views import QuickViewManager
@@ -35,8 +53,21 @@ from .ui.main_dock_widget import MainDockWidget
 from .ui.login_dialog import LoginDialog
 from .ui.connection_settings_dialog import ConnectionSettingsDialog
 from .ui.gps_import_dialog import GpsImportDialog
+from .ui.nuovo_cantiere_dialog import NuovoCantiereDialog
 from .ui.punto_dettaglio_dialog import PuntoDettaglioDialog
+from .ui.buffer_area_dialog import BufferAreaDialog
+from .ui.carotaggio_progettazione_dialog import CarotaggioProgettazioneDialog
+from .ui.rettangolo_progettazione_dialog import RettangoloProgettazioneDialog
+from .ui.ritrovamento_dialog import RitrovamentoDialog
 from .ui.us_detail_dialog import UsDetailDialog
+
+# Chiavi LAYER_SOURCES (layer_manager.py) che attivano il menu "Progettazione"
+# della toolbar: un rettangolo (trincea o saggio) si crea solo mentre uno dei
+# due layer e' quello attivo in QGIS (vedi _handle_active_layer_changed).
+CHIAVI_LAYER_PROGETTAZIONE = (
+    "trincea_progettazione", "saggio_progettazione", "survey_ur", "survey_ritrovamento", "carotaggio_progettazione",
+    "buffer_progettazione",
+)
 
 PLUGIN_DIR = os.path.dirname(__file__)
 
@@ -69,6 +100,7 @@ class MatricePlugin:
         self.actions = []
         self.dock_widget = None
         self.toolbar = None
+        self._azioni_pre_login = []
 
         # Stato applicativo condiviso tra i moduli: nessuna copia locale
         # definitiva del dato, solo lo stato della sessione corrente.
@@ -78,9 +110,11 @@ class MatricePlugin:
         # elenco US): via PostgREST con il token dell'utente, non con la
         # connessione diretta (sezione 1 -- "servizio intermedio").
         self.matrice_api = MatriceApi(self.session)
-        self.layer_manager = LayerManager(self.connection)
+        self.layer_manager = LayerManager(self.connection, self.session)
         self.basemap_manager = BasemapManager()
         self.localizzazione_manager = LocalizzazioneManager()
+        # "Salva modifiche" sul layer area di QGIS => salva anche su Matrice.
+        self.localizzazione_manager.on_area_salvata = self.handle_salva_area
         self.print_layout_manager = PrintLayoutManager(
             os.path.join(PLUGIN_DIR, "config", "layouts", "localizzazione_1_200.qpt")
         )
@@ -115,44 +149,100 @@ class MatricePlugin:
         """
         Chiamato da QGIS all'avvio: crea la barra Matrice e il dock widget.
 
-        La barra (Configura / Accedi / Info) e' pensata per l'operatore non
-        ancora autenticato: una volta fatto l'accesso non serve piu' (il
-        pannello con cantieri/livelli la sostituisce del tutto), quindi
-        sparisce -- ricompare al logout (handle_logout). Le stesse azioni
-        restano comunque raggiungibili dal menu "Matrice" in ogni momento,
-        anche a barra nascosta.
+        Dopo l'accesso Configura/Accedi spariscono dalla barra (ricompaiono
+        al logout, handle_logout); il resto resta visibile, compreso il menu
+        Progettazione. Tutte le azioni restano nel menu "Matrice".
         """
-        icon_path = os.path.join(PLUGIN_DIR, "resources", "icons", "matrice.png")
         self.toolbar = self.iface.addToolBar("Matrice")
         self.toolbar.setObjectName("MatriceToolbar")
+
+        # Icone standard del tema QGIS (QgsApplication.getThemeIcon), una
+        # per azione invece di matrice.png ripetuto 4 volte: niente asset
+        # nuovi da mantenere, e restano coerenti col resto dell'interfaccia
+        # (e con un eventuale tema scuro, che le icone del tema seguono).
+        icona_configura = QgsApplication.getThemeIcon("/mActionOptions.svg")
+        icona_accedi = QgsApplication.getThemeIcon("/mIconFieldKey.svg")
+        icona_join = QgsApplication.getThemeIcon("/mActionJoinSimplify.svg")
+        icona_info = QgsApplication.getThemeIcon("/mActionPropertiesWidget.svg")
 
         # Sezione 2/10: prima si impostava host/porta/credenziali da
         # Console Python di QGIS -- ora c'e' una schermata dedicata,
         # raggiungibile sia dal menu/barra sia (automaticamente) al primo
         # accesso se la connessione non e' ancora configurata.
-        configura_action = QAction(QIcon(icon_path), "Configura", self.iface.mainWindow())
+        configura_action = QAction(icona_configura, "Configura", self.iface.mainWindow())
         configura_action.triggered.connect(self._show_connection_settings)
         self.toolbar.addAction(configura_action)
         self.iface.addPluginToMenu("&Matrice", configura_action)
         self.actions.append(configura_action)
 
-        accedi_action = QAction(QIcon(icon_path), "Accedi", self.iface.mainWindow())
+        accedi_action = QAction(icona_accedi, "Accedi", self.iface.mainWindow())
         accedi_action.triggered.connect(self._on_accedi_clicked)
         self.toolbar.addAction(accedi_action)
         self.iface.addPluginToMenu("&Matrice", accedi_action)
         self.actions.append(accedi_action)
+        self._azioni_pre_login = [configura_action, accedi_action]
 
-        join_action = QAction(QIcon(icon_path), "Unisci dati elenchi", self.iface.mainWindow())
+        join_action = QAction(icona_join, "Unisci dati elenchi", self.iface.mainWindow())
         join_action.triggered.connect(self._join_elenchi_attivo)
         self.toolbar.addAction(join_action)
         self.iface.addPluginToMenu("&Matrice", join_action)
         self.actions.append(join_action)
 
-        info_action = QAction(QIcon(icon_path), "Info", self.iface.mainWindow())
+        info_action = QAction(icona_info, "Info", self.iface.mainWindow())
         info_action.triggered.connect(self._show_info)
         self.toolbar.addAction(info_action)
         self.iface.addPluginToMenu("&Matrice", info_action)
         self.actions.append(info_action)
+
+        # Sezione 4: alternativa al disegno a mano del poligono "Area di
+        # cantiere" -- importa la prima geometria di uno shapefile/
+        # GeoPackage/KML (LocalizzazioneManager.wkt_da_file) e la salva
+        # direttamente su Matrice, stesso percorso di scrittura di
+        # handle_salva_area.
+        icona_importa_area = QgsApplication.getThemeIcon("/mActionAddOgrLayer.svg")
+        importa_area_action = QAction(icona_importa_area, "Importa area da file…", self.iface.mainWindow())
+        importa_area_action.triggered.connect(self._handle_importa_area_da_file)
+        self.toolbar.addAction(importa_area_action)
+        self.iface.addPluginToMenu("&Matrice", importa_area_action)
+        self.actions.append(importa_area_action)
+
+        # Menu "Progettazione" (Trincea/Saggio/Ruota): abilitato solo mentre
+        # e' attivo uno dei due layer Progettazione (vedi
+        # _handle_active_layer_changed), stesso principio di "US attive" e
+        # delle viste rapide qui sopra.
+        icona_progettazione = QgsApplication.getThemeIcon("/mActionAddPolygon.svg")
+        self.progettazione_action = QAction(icona_progettazione, "Progettazione", self.iface.mainWindow())
+        menu_progettazione = QMenu(self.iface.mainWindow())
+        azione_trincea = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionAddPolygon.svg"), "Trincea…")
+        azione_trincea.triggered.connect(lambda: self._apri_nuovo_rettangolo("trincea"))
+        azione_saggio = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionAddPolygon.svg"), "Saggio…")
+        azione_saggio.triggered.connect(lambda: self._apri_nuovo_rettangolo("saggio"))
+        azione_ur = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionAddPolygon.svg"), "Unità di Ricognizione (UR)…")
+        azione_ur.triggered.connect(self._disegna_unita_ricognizione)
+        azione_ritrovamento = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionCapturePoint.svg"), "Rinvenimento…")
+        azione_ritrovamento.triggered.connect(self._apri_nuovo_ritrovamento)
+        azione_carotaggio = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionCapturePoint.svg"), "Carotaggio…")
+        azione_carotaggio.triggered.connect(self._apri_nuovo_carotaggio)
+        azione_buffer = menu_progettazione.addAction(QgsApplication.getThemeIcon("/algorithms/mAlgorithmBuffer.svg"), "Crea buffer area di indagine…")
+        azione_buffer.triggered.connect(self._crea_buffer_area)
+        self.progettazione_action.setMenu(menu_progettazione)
+        self.progettazione_action.setEnabled(False)
+        self.toolbar.addAction(self.progettazione_action)
+        self.toolbar.widgetForAction(self.progettazione_action).setPopupMode(QToolButton.InstantPopup)
+        self.actions.append(self.progettazione_action)
+
+        # Sposta e Ruota stanno in barra, fuori dal menu a tendina (richiesta
+        # di Tommaso): strumenti nativi QGIS, attivi con gli stessi layer del menu.
+        self.sposta_action = QAction(QgsApplication.getThemeIcon("/mActionMoveFeature.svg"), "Sposta elemento", self.iface.mainWindow())
+        self.sposta_action.triggered.connect(self._sposta_elemento_progettazione)
+        self.sposta_action.setEnabled(False)
+        self.toolbar.addAction(self.sposta_action)
+        self.actions.append(self.sposta_action)
+        self.ruota_action = QAction(QgsApplication.getThemeIcon("/mActionRotateFeature.svg"), "Ruota elemento", self.iface.mainWindow())
+        self.ruota_action.triggered.connect(self._ruota_elemento_progettazione)
+        self.ruota_action.setEnabled(False)
+        self.toolbar.addAction(self.ruota_action)
+        self.actions.append(self.ruota_action)
 
         self.dock_widget = MainDockWidget(self.iface.mainWindow())
         self.dock_widget.setObjectName("MatriceDockWidget")
@@ -171,6 +261,8 @@ class MatricePlugin:
         self.dock_widget.layer_visibility_toggled.connect(self.handle_toggle_layer_visibility)
         self.dock_widget.salva_area_requested.connect(self.handle_salva_area)
         self.dock_widget.stampa_localizzazione_requested.connect(self.handle_stampa_localizzazione)
+        self.dock_widget.nuovo_cantiere_richiesto.connect(self._handle_nuovo_cantiere)
+        self.dock_widget.aggiorna_cantieri_richiesto.connect(self._handle_aggiorna_cantieri)
 
         # Scheda US completa (doppio click su un elemento gia' selezionato
         # del layer "Rilievo vettoriale"): niente strumento mappa dedicato,
@@ -251,10 +343,13 @@ class MatricePlugin:
         QMessageBox.information(self.iface.mainWindow(), "Informazioni su Matrice", f"{nome} - v{versione}\n\n{descrizione}")
 
     def _show_login_dialog(self):
+        username_salvato, password_salvata = self.session.saved_credentials()
         dialog = LoginDialog(
             self.iface.mainWindow(),
-            remember_default=self.session.has_saved_credentials(),
+            remember_default=username_salvato is not None,
             verify_callback=self._verify_login,
+            username_default=username_salvato or "",
+            password_default=password_salvata or "",
         )
         if dialog.exec_():
             # A questo punto il login e' gia' riuscito (_verify_login lo ha
@@ -284,7 +379,7 @@ class MatricePlugin:
         # La barra Configura/Accedi/Info non serve piu' una volta dentro:
         # il pannello appena mostrato la sostituisce (ricompare al logout,
         # vedi handle_logout). Le stesse azioni restano nel menu "Matrice".
-        self.toolbar.setVisible(False)
+        self._mostra_azioni_pre_login(False)
         # Sfondi satellite/CTR (sezione ...): aggiunti una sola volta a
         # sessione QGIS, non duplicati se gia' presenti (BasemapManager).
         # Google -> Esri in automatico se Google non e' raggiungibile; un
@@ -295,6 +390,125 @@ class MatricePlugin:
                 "Impossibile caricare lo sfondo satellitare (Google e Esri entrambi non raggiungibili): "
                 "verificare la connessione Internet."
             )
+
+    def _handle_aggiorna_cantieri(self):
+        """
+        "⟳ Aggiorna": rilegge l'elenco cantieri dal server. Serve perche'
+        populate_cantieri viene chiamato solo al login (_dopo_login_riuscito)
+        -- un cantiere creato nel frattempo (app web o un'altra sessione
+        QGIS) non compare finche' non si forza questo ricaricamento.
+        """
+        try:
+            cantieri = self.matrice_api.list_cantieri_abilitati(self.session.access_token)
+        except Exception as exc:
+            self.dock_widget.show_error(str(exc))
+            return
+        self.dock_widget.populate_cantieri(cantieri)
+
+    def _handle_nuovo_cantiere(self):
+        """
+        Sezione 4, "Crea cantiere da QGIS": apre il dialog, risolve
+        referente e azienda, inserisce la riga su Matrice e apre subito
+        la tavola appena creata -- stesso punto di arrivo di un cantiere
+        scelto dall'elenco (handle_open_tavola).
+        """
+        token = self.session.access_token
+        try:
+            tipi_consentiti = self.matrice_api.tipi_intervento_consentiti(token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Matrice", str(exc))
+            return
+        if not tipi_consentiti:
+            self.iface.messageBar().pushWarning(
+                "Matrice",
+                "Il profilo collegato non e' abilitato a nessun tipo di lavoro: "
+                "contattare il referente dell'azienda su Matrice.",
+            )
+            return
+
+        dialog = NuovoCantiereDialog(tipi_consentiti, self.iface.mainWindow())
+        if not dialog.exec_():
+            return
+
+        valori = dialog.valori()
+
+        email_referente = valori["email_referente"]
+        if not email_referente:
+            referente_campo_utente_id = self.session.user_id
+        else:
+            referente = self.matrice_api.trova_utente_per_email(email_referente, token)
+            if referente is not None:
+                referente_campo_utente_id = referente["id"]
+            else:
+                referente_campo_utente_id = self.session.user_id
+                self.iface.messageBar().pushWarning(
+                    "Matrice",
+                    "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
+                    "sull'utente attualmente connesso.",
+                )
+
+        try:
+            azienda_id = self.matrice_api.azienda_utente_loggato(token)
+            campi = {
+                "nome_cantiere": valori["nome_cantiere"],
+                "tipo_intervento": valori["tipo_intervento"],
+                "comune": valori["comune"],
+                "provincia": valori["provincia"],
+                "regione": valori["regione"],
+                "anno_esecuzione": valori["anno_esecuzione"],
+                "referente_campo_utente_id": referente_campo_utente_id,
+                "azienda_id": azienda_id,
+                "created_by": self.session.user_id,
+            }
+            nuovo = self.matrice_api.crea_cantiere(campi, token)
+            # has_cantiere_access() (RLS su `cantiere`) mostra la riga solo
+            # a chi ha ruolo "referente" nella stessa azienda, oppure una
+            # riga esplicita in cantiere_accesso: chi crea il cantiere non
+            # e' detto che sia "referente" (puo' essere un "collaboratore"),
+            # quindi senza questa riga il cantiere resterebbe invisibile
+            # anche a chi l'ha appena creato. Va bene comunque inserirla
+            # anche per un "referente" (vede gia' il cantiere lo stesso,
+            # la riga in piu' non cambia nulla).
+            self.matrice_api.rest.insert(
+                "cantiere_accesso",
+                {
+                    "cantiere_id": nuovo["id"],
+                    "utente_id": self.session.user_id,
+                    "ruolo_accesso": "editor",
+                },
+                token,
+            )
+            # Se il referente di campo indicato e' un utente diverso da chi
+            # crea il cantiere, serve la stessa riga anche per lui: non ha
+            # accesso automatico solo perche' e' indicato in
+            # referente_campo_utente_id (stessa regola della web app, vedi
+            # dashboard.js `nuovoCantiere`).
+            if referente_campo_utente_id != self.session.user_id:
+                self.matrice_api.rest.insert(
+                    "cantiere_accesso",
+                    {
+                        "cantiere_id": nuovo["id"],
+                        "utente_id": referente_campo_utente_id,
+                        "ruolo_accesso": "editor",
+                    },
+                    token,
+                )
+        except Exception as exc:
+            # La Progettazione Archeologica si crea solo con piano Pro/Team: lo
+            # impone la RLS di `cantiere` (policy progettazione_piano_pro_team,
+            # migrazione 0080), qui si traduce l'errore in un messaggio chiaro.
+            if "progettazione_piano_pro_team" in str(exc):
+                self.iface.messageBar().pushWarning(
+                    "Matrice",
+                    "La Progettazione Archeologica e' inclusa nei piani "
+                    "Professionista e Aziendale: il piano dell'azienda non la prevede.",
+                )
+            else:
+                self.iface.messageBar().pushCritical("Matrice", str(exc))
+            return
+
+        self.handle_open_tavola(nuovo["id"], nuovo["nome_cantiere"])
+        self.dock_widget.populate_cantieri(self.matrice_api.list_cantieri_abilitati(token))
 
     def _show_connection_settings(self):
         """
@@ -319,7 +533,12 @@ class MatricePlugin:
         self.session.logout()
         self.dock_widget.reset()
         self.dock_widget.hide()
-        self.toolbar.setVisible(True)
+        self._mostra_azioni_pre_login(True)
+
+    def _mostra_azioni_pre_login(self, visibili):
+        """Configura/Accedi si nascondono dopo l'accesso; il resto della barra (Progettazione, Importa area...) resta."""
+        for azione in self._azioni_pre_login:
+            azione.setVisible(visibili)
 
     def handle_open_tavola(self, cantiere_id, nome_cantiere=None):
         """
@@ -355,6 +574,17 @@ class MatricePlugin:
         except Exception:
             pass
 
+        # CRS di progetto sul sistema di riferimento personale dell'utente
+        # loggato (comodo di visualizzazione/digitazione in QGIS): le
+        # geometrie restano sempre salvate in EPSG:4326, questo non le
+        # tocca. Mai bloccante.
+        try:
+            sr_id = self.matrice_api.sistema_riferimento_utente_loggato(self.session.access_token)
+            epsg = SISTEMI_RIFERIMENTO_EPSG.get(sr_id, 4326)
+            QgsProject.instance().setCrs(QgsCoordinateReferenceSystem(f"EPSG:{epsg}"))
+        except Exception:
+            pass
+
         # Localizzazione dell'intervento (punto gia' registrato su Matrice) e
         # area disegnata: due layer del tutto separati (vedi
         # core/localizzazione_manager.py), ciascuno aggiunto subito in mappa
@@ -382,14 +612,17 @@ class MatricePlugin:
             if has_data[key]:
                 self._watch_layer_sync(key, layer, cantiere_id)
 
-        layer_states = [(key, opts["display_name"], has_data[key]) for key, opts in LAYER_SOURCES.items()]
+        layer_states = [
+            (key, opts["display_name"], has_data[key], _GRUPPO_LIVELLI.get(key))
+            for key, opts in LAYER_SOURCES.items()
+        ]
         # "Localizzazione di cantiere" e "Area di cantiere" non sono layer
         # PostGIS come gli altri (vedi core/localizzazione_manager.py): due
         # voci distinte, ciascuna spuntata solo se il relativo dato era gia'
         # presente su Matrice all'apertura (coerente con ha_punto/ha_area
         # appena calcolati, che hanno gia' deciso se crearli in mappa).
-        layer_states.append(("localizzazione_cantiere", "Localizzazione di cantiere", ha_punto))
-        layer_states.append(("area_intervento", "Area di cantiere", ha_area))
+        layer_states.append(("localizzazione_cantiere", "Localizzazione di cantiere", ha_punto, None))
+        layer_states.append(("area_intervento", "Area di cantiere", ha_area, None))
         self.dock_widget.populate_layer_toggles(cantiere_id, layer_states)
 
         fasi_rows = self.matrice_api.list_fasi(cantiere_id, self.session.access_token)
@@ -435,6 +668,9 @@ class MatricePlugin:
         # "US attive" sopra, applicato al menu delle viste rapide.
         chiave_attiva = self._chiave_layer_attivo(cantiere_id, layer)
         self.dock_widget.populate_quick_views(self.quick_view_manager.available_views(chiave_attiva))
+        abilita_progettazione = chiave_attiva in CHIAVI_LAYER_PROGETTAZIONE
+        for azione in (self.progettazione_action, self.sposta_action, self.ruota_action):
+            azione.setEnabled(abilita_progettazione)
 
     def _chiave_layer_attivo(self, cantiere_id, layer):
         """Chiave in LAYER_SOURCES del layer QGIS attivo, o None se non e' uno dei layer di Matrice."""
@@ -444,6 +680,240 @@ class MatricePlugin:
             if candidato.id() == layer.id():
                 return key
         return None
+
+    def _apri_nuovo_rettangolo(self, tipo):
+        """
+        tipo: 'trincea' o 'saggio' (le due voci del menu "Progettazione",
+        stessa funzione, scheda diversa). Apre il dialog con i campi del
+        tipo scelto; alla conferma attiva lo strumento "un click per
+        posizionare" (core/rettangolo_progettazione.py) sul layer
+        corrispondente, SEMPRE quello scelto nel menu, non necessariamente
+        quello attivo in quel momento in QGIS.
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        chiave = "trincea_progettazione" if tipo == "trincea" else "saggio_progettazione"
+        layer = self.layer_manager.current_layers(cantiere_id).get(chiave) if cantiere_id else None
+        if layer is None:
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
+            return
+
+        dialog = RettangoloProgettazioneDialog(tipo, self.iface.mainWindow())
+        if dialog.exec_() != dialog.Accepted:
+            return
+        valori = dialog.valori()
+        larghezza_m = valori.pop("larghezza_m")
+        lunghezza_m = valori.pop("lunghezza_m")
+        # cantiere_id e created_by sono campi nascosti nel layer (non nel
+        # form), quindi vanno scritti qui: senza, l'insert viola il not null.
+        valori["cantiere_id"] = cantiere_id
+        valori["created_by"] = self.session.user_id
+
+        def dopo_creazione(ok):
+            if ok:
+                layer.triggerRepaint()
+                self.iface.messageBar().pushSuccess("Progettazione", f"{valori['nome']} creato: clicca per selezionarlo e ruotarlo se serve.")
+            else:
+                self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
+
+        strumento = PosizionaRettangoloMapTool(
+            self.iface.mapCanvas(), layer, larghezza_m, lunghezza_m, valori, dopo_creazione
+        )
+        self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto dove posizionare il rettangolo.")
+        self.iface.mapCanvas().setMapTool(strumento)
+
+    def _attiva_strumento_nativo(self, nome_azione, etichetta):
+        """
+        Richiama uno strumento nativo QGIS (stesso della toolbar di
+        digitalizzazione) per objectName: QgisInterface non espone
+        actionRotateFeature()/actionMoveFeature(). Niente reimplementazione:
+        la rotazione scritta sui vertici resta quella che poi si ricalcola in
+        `angolo_rotazione_gradi` (vedi rettangolo_progettazione.py).
+        """
+        azione_nativa = self.iface.mainWindow().findChild(QAction, nome_azione)
+        if azione_nativa is None:
+            self.iface.messageBar().pushWarning("Progettazione", f"Strumento {etichetta} non trovato in QGIS.")
+            return
+        layer = self.iface.activeLayer()
+        if layer is not None and not layer.isEditable():
+            layer.startEditing()
+        azione_nativa.trigger()
+
+    def _ruota_elemento_progettazione(self):
+        self._attiva_strumento_nativo("mActionRotateFeature", "Ruota elementi")
+
+    def _sposta_elemento_progettazione(self):
+        self._attiva_strumento_nativo("mActionMoveFeature", "Sposta elementi")
+
+    def _apri_nuovo_carotaggio(self):
+        """
+        Dialog "Nuovo carotaggio di progetto" + click continuo sul layer
+        carotaggio_progettazione (tabella propria, distinta da `carotaggio`
+        della Lettura carotaggi). Il codice CAR-01, CAR-02... lo assegna il
+        database. Layer preso via show_layer: puo' non essere ancora in mappa.
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
+            return
+        layer, _ = self.layer_manager.show_layer(cantiere_id, "carotaggio_progettazione")
+
+        dialog = CarotaggioProgettazioneDialog(self.iface.mainWindow())
+        if dialog.exec_() != dialog.Accepted:
+            return
+        attributi = dialog.valori()
+        attributi["cantiere_id"] = cantiere_id
+        attributi["created_by"] = self.session.user_id
+
+        def dopo_creazione(ok):
+            if ok:
+                layer.triggerRepaint()
+                self.iface.messageBar().pushSuccess("Progettazione", "Carotaggio creato.")
+            else:
+                self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
+
+        strumento = PosizionaPuntoMapTool(self.iface.mapCanvas(), layer, attributi, dopo_creazione)
+        self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto del carotaggio (Esc o tasto destro per finire).")
+        self.iface.mapCanvas().setMapTool(strumento)
+
+    def _apri_nuovo_ritrovamento(self):
+        """
+        Apre il dialog "Nuovo rinvenimento" e, alla conferma, attiva lo
+        strumento "un click per posizionare" (core/ritrovamento_progettazione.py)
+        sul layer survey_ritrovamento.
+
+        `ur_id` e' obbligatorio su survey_ritrovamento (vincolo verificato in
+        produzione): la lista delle UR disponibili si legge dal layer
+        survey_ur gia' caricato (stesso cantiere), non serve una chiamata
+        REST in piu'. Se non c'e' ancora nessuna UR disegnata, niente
+        dialog: un rinvenimento non puo' nascere "libero".
+
+        Il layer survey_ritrovamento si prende via show_layer (non
+        current_layers come in _disegna_unita_ricognizione): potrebbe non
+        essere ancora stato mostrato in mappa (nessun rinvenimento esistente
+        per questo cantiere), show_layer lo crea/mostra vuoto e pronto per
+        addFeature, stesso schema di _apri_nuovo_rettangolo.
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
+            return
+        layer, _ = self.layer_manager.show_layer(cantiere_id, "survey_ritrovamento")
+
+        layer_ur = self.layer_manager.current_layers(cantiere_id).get("survey_ur")
+        # f["id"] e' None per una UR disegnata ma non ancora salvata (layer
+        # in edit mode, vedi _disegna_unita_ricognizione): esclusa, altrimenti
+        # l'insert del rinvenimento fallirebbe sul vincolo ur_id NOT NULL con
+        # un errore generico.
+        ur_disponibili = (
+            [(f["id"], f["codice_ur"]) for f in layer_ur.getFeatures() if f["id"] is not None]
+            if layer_ur else []
+        )
+        if not ur_disponibili:
+            QMessageBox.warning(
+                self.iface.mainWindow(), "Progettazione",
+                "Disegna prima almeno una Unità di Ricognizione: ogni rinvenimento deve appartenere a una UR.",
+            )
+            return
+
+        dialog = RitrovamentoDialog(ur_disponibili, self.iface.mainWindow())
+        if dialog.exec_() != dialog.Accepted:
+            return
+        attributi = dialog.valori()
+        attributi["cantiere_id"] = cantiere_id
+        attributi["created_by"] = self.session.user_id
+
+        def dopo_creazione(ok):
+            if ok:
+                layer.triggerRepaint()
+                self.iface.messageBar().pushSuccess("Progettazione", "Rinvenimento creato.")
+            else:
+                self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
+
+        strumento = PosizionaPuntoMapTool(self.iface.mapCanvas(), layer, attributi, dopo_creazione)
+        self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto del rinvenimento.")
+        self.iface.mapCanvas().setMapTool(strumento)
+
+    def _disegna_unita_ricognizione(self):
+        """
+        Attiva l'editing nativo QGIS sul layer survey_ur (poligono libero,
+        niente tool custom come il rettangolo di trincea/saggio: il form
+        attributi di QGIS si apre da solo a disegno completato, dove
+        l'operatore compila codice_ur -- obbligatorio -- e gli altri campi).
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
+            return
+        layer, _ = self.layer_manager.show_layer(cantiere_id, "survey_ur")
+        self.iface.setActiveLayer(layer)
+        if not layer.isEditable():
+            layer.startEditing()
+        self.iface.actionAddFeature().trigger()
+
+    def _crea_buffer_area(self):
+        """
+        Genera un buffer attorno all'area di cantiere gia' caricata
+        (cantiere.area_geom_wkt) e lo salva sul layer buffer_progettazione
+        -- distanza chiesta all'operatore ad ogni generazione, non fissa sul
+        cantiere. Le UR si disegnano su questo buffer (guida visiva, nessun
+        vincolo geometrico imposto dal codice).
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
+            return
+        try:
+            localizzazione = self.matrice_api.get_localizzazione_cantiere(cantiere_id, self.session.access_token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Progettazione", str(exc))
+            return
+        area_wkt = localizzazione.get("area_geom_wkt") if localizzazione else None
+        if not area_wkt:
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Carica prima l'area di cantiere (Mappa di cantiere) prima di generare il buffer.")
+            return
+        dialog = BufferAreaDialog(self.iface.mainWindow())
+        if dialog.exec_() != dialog.Accepted:
+            return
+        distanza_m = dialog.valori()["distanza_m"]
+        try:
+            wkt_buffer = calcola_buffer_wkt(area_wkt, distanza_m)
+            self._salva_buffer_progettazione(cantiere_id, wkt_buffer, distanza_m)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Progettazione", str(exc))
+            return
+        self.iface.messageBar().pushSuccess("Progettazione", f"Buffer di {distanza_m} m creato e salvato.")
+
+    def _salva_buffer_progettazione(self, cantiere_id, wkt_buffer, distanza_m):
+        """
+        Scrive il buffer sul layer PostGIS "Progettazione - Buffer"
+        (buffer_progettazione): un solo buffer per cantiere, il nuovo
+        sostituisce il precedente. Lo vede anche l'app web.
+        """
+        layer, _ = self.layer_manager.show_layer(cantiere_id, "buffer_progettazione")
+        geometria = QgsGeometry.fromWkt(wkt_buffer)
+        if geometria.isNull():
+            raise ValueError("Buffer non valido.")
+        if geometria.isMultipart():
+            geometria.convertToSingleType()
+        era_editabile = layer.isEditable()
+        if not era_editabile:
+            layer.startEditing()
+        for esistente in list(layer.getFeatures()):
+            layer.deleteFeature(esistente.id())
+        feature = QgsFeature(layer.fields())
+        feature.setGeometry(geometria)
+        for campo, valore in (("id", str(uuid.uuid4())), ("cantiere_id", cantiere_id), ("created_by", self.session.user_id), ("distanza_m", distanza_m)):
+            indice = layer.fields().indexOf(campo)
+            if indice >= 0:
+                feature.setAttribute(indice, valore)
+        if not layer.addFeature(feature):
+            layer.rollBack()
+            raise RuntimeError("Impossibile aggiungere il buffer al layer.")
+        if not era_editabile and not layer.commitChanges():
+            errori = "; ".join(layer.commitErrors())
+            layer.rollBack()
+            raise RuntimeError(f"Salvataggio del buffer non riuscito: {errori}")
+        layer.triggerRepaint()
 
     def _rimuovi_layer_cantiere(self, cantiere_id):
         """
@@ -523,8 +993,34 @@ class MatricePlugin:
                     self._apply_us_style(layer)
                 elif key in ("colonna_stratigrafica", "carotaggio"):
                     self.style_manager.apply_esito_style(layer)
+            if key in CHIAVI_LAYER_PROGETTAZIONE:
+                # Spuntare un livello Progettazione apre subito la matita.
+                self.iface.setActiveLayer(layer)
+                if not layer.isEditable():
+                    layer.startEditing()
         else:
+            if key in CHIAVI_LAYER_PROGETTAZIONE and not self._salva_layer_in_modifica(cantiere_id, key):
+                return
             self.layer_manager.hide_layer(cantiere_id, key)
+
+    def _salva_layer_in_modifica(self, cantiere_id, key):
+        """
+        Togliendo la spunta a un livello Progettazione in modifica, le
+        modifiche si salvano. Se il salvataggio fallisce il livello resta in
+        mappa e in modifica (niente perdita di dati) e l'operatore vede l'errore.
+        """
+        layer = self.layer_manager.current_layers(cantiere_id).get(key)
+        if layer is None or not layer.isEditable():
+            return True
+        if layer.commitChanges():
+            layer.triggerRepaint()
+            return True
+        errori = "; ".join(layer.commitErrors())
+        self.iface.messageBar().pushCritical(
+            "Progettazione",
+            f"Modifiche non salvate, livello lasciato in modifica: {errori}",
+        )
+        return False
 
     def _ottieni_localizzazione(self, cantiere_id):
         """
@@ -712,7 +1208,54 @@ class MatricePlugin:
         except Exception as exc:
             self._show_warning(str(exc))
             return
+        self.localizzazione_manager.segna_area_salvata(cantiere_id, wkt)
         self.iface.messageBar().pushSuccess("Matrice", "Area dell'intervento salvata.")
+
+    def _handle_importa_area_da_file(self):
+        """
+        Azione toolbar "Importa area da file…" (sezione 4): alternativa al
+        disegno a mano del poligono "Area di cantiere" -- legge la prima
+        geometria di uno shapefile/GeoPackage/KML e la salva su Matrice,
+        poi ricarica il layer "Area di cantiere (disegno)" in mappa per
+        mostrare subito il poligono importato (stesso stile applicato dopo
+        un disegno a mano o all'apertura tavola, vedi _apply_area_style).
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            self._show_warning("Aprire prima la tavola di un cantiere.")
+            return
+
+        path, _ = QFileDialog.getOpenFileName(
+            self.iface.mainWindow(),
+            "Importa area di cantiere",
+            "",
+            "Vettoriali (*.shp *.gpkg *.kml)",
+        )
+        if not path:
+            return
+
+        try:
+            wkt = self.localizzazione_manager.wkt_da_file(path)
+        except ValueError as exc:
+            self.iface.messageBar().pushWarning("Matrice", str(exc))
+            return
+
+        try:
+            self.matrice_api.update_area_intervento(cantiere_id, wkt, self.session.access_token)
+        except Exception as exc:
+            self._show_warning(str(exc))
+            return
+
+        nome_cantiere = self.layer_manager.nome_cantiere(cantiere_id) or cantiere_id
+        layer = self.localizzazione_manager.layer_area(cantiere_id, nome_cantiere, wkt)
+        layer.dataProvider().truncate()
+        feature = QgsFeature()
+        feature.setGeometry(QgsGeometry.fromWkt(wkt))
+        layer.dataProvider().addFeature(feature)
+        layer.updateExtents()
+        layer.triggerRepaint()
+        self._apply_area_style(layer)
+        self.iface.messageBar().pushSuccess("Matrice", "Area dell'intervento importata e salvata.")
 
     def handle_stampa_localizzazione(self, cantiere_id):
         """

@@ -14,7 +14,24 @@ espongono un campo `geom` calcolato e traducono le modifiche di posizione
 in scritture su lat/lng tramite trigger lato database.
 """
 
-from qgis.core import Qgis, QgsEditorWidgetSetup, QgsProject, QgsVectorLayer
+from qgis.core import Qgis, QgsDefaultValue, QgsEditorWidgetSetup, QgsProject, QgsVectorLayer
+from qgis.PyQt import sip
+
+
+def _layer_presente(layer):
+    """
+    True se `layer` esiste ancora nel progetto QGIS corrente.
+
+    Un operatore puo' rimuovere un layer a mano dal pannello Livelli di
+    QGIS (non solo togliendo la spunta dal pannello Matrice): l'oggetto
+    C++ sottostante viene distrutto, ma il wrapper Python resta in
+    _layers_by_cantiere finche' non si richiama questa funzione. Senza
+    `sip.isdeleted()`, chiamare layer.id() su un wrapper il cui oggetto
+    C++ e' gia' stato eliminato lancia RuntimeError invece di poter
+    essere trattato come "non piu' presente" (stesso bug corretto in
+    core/localizzazione_manager.py).
+    """
+    return layer is not None and not sip.isdeleted(layer) and QgsProject.instance().mapLayer(layer.id()) is not None
 
 # view/tabella -> colonna geometria, chiave primaria, nome visualizzato,
 # tipo WKB e SRID (sezione 4, passo 1).
@@ -92,14 +109,145 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "origine_ocr_id"),
         "espressione_display": "'Sezione ' || \"numero_sezione\"",
     },
+    # Candidati di segni archeologici (crop/soil/shadow mark) rilevati
+    # automaticamente da strumento esterno (segni_archeologici/rileva_segni.py,
+    # NDVI multitemporale + microrilievo DTM), caricati su Matrice per
+    # revisione in QGIS. `geom` qui e' una vera colonna PostGIS (poligono),
+    # non sincronizzata da lat/lng come colonna_stratigrafica/carotaggio.
+    "progettazione_cropmark": {
+        "source": "v_progettazione_cropmark_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - cropmark",
+        "wkb_type": Qgis.WkbType.MultiPolygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"tipo\" || ' (' || round(\"area_mq\") || ' mq)'",
+    },
+    # Poligoni dei vincoli paesaggistici SITAP (MiC) intersecanti l'area di
+    # cantiere, salvati dal pannello "Vincoli paesaggistici" dopo l'analisi
+    # WFS+Turf lato client (app/js/tool-vincoli.js, 2026-10-13). Solo gli
+    # areali (art. 136/142): lineari/puntuali restano solo a video, mai
+    # persistiti qui.
+    "progettazione_vincolo": {
+        "source": "v_progettazione_vincolo_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - vincoli",
+        "wkb_type": Qgis.WkbType.MultiPolygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "attributi"),
+        "espressione_display": "coalesce(\"nome\", \"codice_norma\", 'Vincolo')",
+    },
+    # Trincee e Saggi del flusso Progettazione Archeologica (migrazione
+    # 0068_trincea_saggio_progettazione.sql): rettangoli creati dal menu
+    # "Progettazione" della toolbar (core/rettangolo_progettazione.py), non
+    # disegnati a mano. Due tabelle separate: stessa forma (rettangolo +
+    # rotazione) ma campi/tempistiche diversi (vedi la migrazione).
+    "trincea_progettazione": {
+        "source": "v_trincea_progettazione_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Trincee",
+        "wkb_type": Qgis.WkbType.Polygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"nome\"",
+    },
+    "saggio_progettazione": {
+        "source": "v_saggio_progettazione_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Saggi",
+        "wkb_type": Qgis.WkbType.Polygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"nome\"",
+    },
+    "survey_ur": {
+        "source": "v_survey_ur_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Unità di Ricognizione",
+        "wkb_type": Qgis.WkbType.Polygon,
+        "srid": 4326,
+        # In QGIS si chiede solo il codice UR; l'area si calcola in automatico
+        # (trigger survey_ur_area, migrazione 0083), tutto il resto si compila
+        # sul campo dall'app.
+        "campi_nascosti": (
+            "id", "cantiere_id", "created_by", "data_ricognizione", "operatori",
+            "durata_minuti", "condizioni_meteo", "grado_visibilita", "uso_suolo",
+            "densita_manufatti", "tipo_manufatti", "periodo_prevalente", "esito",
+            "note", "created_at",
+        ),
+        "campi_sola_lettura": ("area_mq",),
+        "espressione_display": "\"codice_ur\"",
+    },
+    # Carotaggi PREVISTI dalla Progettazione: tabella propria
+    # (carotaggio_progettazione), distinta da "carotaggio" che appartiene al
+    # flusso "Lettura carotaggi" e non va mai mescolata con questa.
+    "carotaggio_progettazione": {
+        "source": "v_carotaggio_progettazione_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Carotaggi",
+        "wkb_type": Qgis.WkbType.Point,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"nome\"",
+    },
+    # Buffer attorno all'area di indagine (migrazione 0082): un poligono per
+    # cantiere, generato da "Crea buffer area di indagine" e modificabile.
+    "buffer_progettazione": {
+        "source": "v_buffer_progettazione_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Buffer",
+        "wkb_type": Qgis.WkbType.Polygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "'Buffer ' || coalesce(to_string(\"distanza_m\"), '')",
+    },
+    "survey_ritrovamento": {
+        "source": "v_survey_ritrovamento_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Rinvenimenti",
+        "wkb_type": Qgis.WkbType.Point,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "ur_id"),
+        "espressione_display": "'Rinvenimento ' || \"numero_progressivo\"",
+    },
 }
 
 
+# Livelli del flusso "Progettazione Archeologica": nel pannello Livelli di QGIS
+# stanno sotto un unico gruppo, non sparsi alla radice. Il layer "Carotaggi"
+# della Lettura carotaggi ("carotaggio") resta fuori: e' un altro flusso. I
+# carotaggi di progetto hanno un layer a parte ("carotaggio_progettazione").
+GRUPPO_PROGETTAZIONE = "Progettazione"
+# Livelli di riferimento (sola lettura) che un cantiere a valle mostra dalla
+# Progettazione di origine: carotaggi per la Lettura carotaggi, trincee e saggi
+# per l'Assistenza in corso d'opera (sorveglianza).
+GRUPPO_RIFERIMENTO = "Da progettazione (sola lettura)"
+RIFERIMENTI_PER_TIPO_INTERVENTO = {
+    "carotaggi": ("carotaggio_progettazione",),
+    "sorveglianza": ("trincea_progettazione", "saggio_progettazione"),
+}
+CHIAVI_GRUPPO_PROGETTAZIONE = (
+    "progettazione_cropmark", "progettazione_vincolo", "trincea_progettazione",
+    "saggio_progettazione", "survey_ur", "survey_ritrovamento", "carotaggio_progettazione",
+    "buffer_progettazione",
+)
+
+
 class LayerManager:
-    def __init__(self, connection):
+    def __init__(self, connection, session=None):
         self.connection = connection
+        self.session = session
         self._layers_by_cantiere = {}
         self._nome_by_cantiere = {}
+        self._riferimenti_by_cantiere = {}  # layer di sola lettura dalla Progettazione di origine
 
     def nome_cantiere(self, cantiere_id):
         """Nome del cantiere passato all'ultimo load_cantiere() per questo id, o None se non noto."""
@@ -124,7 +272,28 @@ class LayerManager:
         if not layer.isValid():
             raise RuntimeError(f"Impossibile caricare il layer '{key}' da Matrice.")
         self._applica_presentazione(layer, opts)
+        self._applica_default_tecnici(layer, cantiere_id)
         return layer
+
+    def _applica_default_tecnici(self, layer, cantiere_id):
+        """
+        cantiere_id e created_by sono campi nascosti nel form: senza un default
+        gli elementi disegnati con gli strumenti nativi QGIS (UR, buffer...)
+        arrivano al DB con NULL e violano il not null su cantiere_id.
+        """
+        valori = {"cantiere_id": cantiere_id}
+        utente_id = getattr(self.session, "user_id", None)
+        if utente_id:
+            valori["created_by"] = utente_id
+        for nome_campo, valore in valori.items():
+            indice = layer.fields().indexFromName(nome_campo)
+            if indice != -1:
+                layer.setDefaultValueDefinition(indice, QgsDefaultValue(f"'{valore}'", False))
+        # id generato dal plugin: non dipende dal default della vista letto da
+        # QGIS al caricamento (un layer aperto prima di una migrazione inviava id NULL).
+        indice_id = layer.fields().indexFromName("id")
+        if indice_id != -1 and layer.fields().field(indice_id).typeName() == "uuid":
+            layer.setDefaultValueDefinition(indice_id, QgsDefaultValue("uuid('WithoutBraces')", False))
 
     def _applica_presentazione(self, layer, opts):
         """
@@ -145,6 +314,15 @@ class LayerManager:
             indice = layer.fields().indexFromName(nome_campo)
             if indice != -1:
                 layer.setEditorWidgetSetup(indice, QgsEditorWidgetSetup("Hidden", {}))
+
+        campi_sola_lettura = opts.get("campi_sola_lettura", ())
+        if campi_sola_lettura:
+            form_config = layer.editFormConfig()
+            for nome_campo in campi_sola_lettura:
+                indice = layer.fields().indexFromName(nome_campo)
+                if indice != -1:
+                    form_config.setReadOnly(indice, True)
+            layer.setEditFormConfig(form_config)
 
         espressione_display = opts.get("espressione_display")
         if espressione_display:
@@ -171,10 +349,19 @@ class LayerManager:
         layers = {}
         has_data = {}
         for key in LAYER_SOURCES:
-            layer = self._build_layer(cantiere_id, key)
+            # Un layer che non si carica (es. grant mancante su una vista
+            # in produzione) non deve bloccare gli altri: senza questo
+            # try/except un solo RuntimeError qui impediva anche
+            # populate_layer_toggles piu' sotto in matrice_plugin.py,
+            # lasciando l'intero pannello "Livelli del cantiere" vuoto.
+            try:
+                layer = self._build_layer(cantiere_id, key)
+            except RuntimeError:
+                has_data[key] = False
+                continue
             layers[key] = layer
             if layer.featureCount() > 0:
-                QgsProject.instance().addMapLayer(layer)
+                self._aggiungi_in_mappa(layer, key)
                 has_data[key] = True
             else:
                 has_data[key] = False
@@ -182,22 +369,66 @@ class LayerManager:
         self._layers_by_cantiere[cantiere_id] = layers
         return layers, has_data
 
+    def _aggiungi_in_mappa(self, layer, key):
+        """Aggiunge `layer` al progetto, nel gruppo "Progettazione" se ne fa parte."""
+        if key not in CHIAVI_GRUPPO_PROGETTAZIONE:
+            QgsProject.instance().addMapLayer(layer)
+            return
+        radice = QgsProject.instance().layerTreeRoot()
+        gruppo = radice.findGroup(GRUPPO_PROGETTAZIONE) or radice.addGroup(GRUPPO_PROGETTAZIONE)
+        QgsProject.instance().addMapLayer(layer, False)
+        gruppo.addLayer(layer)
+
+    def carica_riferimento(self, cantiere_id, origine_id, chiavi):
+        """
+        Mostra in mappa, SOLA LETTURA, i livelli `chiavi` della Progettazione
+        `origine_id` dentro il cantiere a valle `cantiere_id` (carotaggi /
+        sorveglianza): carotaggi previsti, trincee e saggi di progetto. Non si
+        aggancia nessuna sincronizzazione: sono dati di riferimento, non si
+        modificano da qui. Ritorna la lista dei layer aggiunti.
+        """
+        self.rimuovi_riferimento(cantiere_id)
+        aggiunti = []
+        for key in chiavi:
+            layer = self._build_layer(origine_id, key)
+            layer.setName(f"{LAYER_SOURCES[key]['display_name']} (da progetto)")
+            layer.setReadOnly(True)
+            radice = QgsProject.instance().layerTreeRoot()
+            gruppo = radice.findGroup(GRUPPO_RIFERIMENTO) or radice.addGroup(GRUPPO_RIFERIMENTO)
+            QgsProject.instance().addMapLayer(layer, False)
+            gruppo.addLayer(layer)
+            aggiunti.append(layer)
+        self._riferimenti_by_cantiere[cantiere_id] = aggiunti
+        return aggiunti
+
+    def layers_riferimento(self, cantiere_id):
+        return [l for l in self._riferimenti_by_cantiere.get(cantiere_id, []) if _layer_presente(l)]
+
+    def rimuovi_riferimento(self, cantiere_id):
+        for layer in self._riferimenti_by_cantiere.pop(cantiere_id, []):
+            if _layer_presente(layer):
+                QgsProject.instance().removeMapLayer(layer.id())
+
     def current_layers(self, cantiere_id):
         return self._layers_by_cantiere.get(cantiere_id, {})
 
     def cantiere_del_layer(self, layer):
-        """Id del cantiere a cui appartiene il rilievo `layer`, o None."""
+        """
+        Ritorna il cantiere_id a cui appartiene `layer` se è il rilievo
+        vettoriale (rilievo_geometria) di un cantiere caricato, altrimenti None.
+        Serve a "Unisci dati elenchi", che lavora solo su quel layer.
+        """
         if layer is None:
             return None
         for cantiere_id, layers in self._layers_by_cantiere.items():
             rilievo = layers.get("rilievo_geometria")
-            if rilievo is not None and rilievo.id() == layer.id():
+            if _layer_presente(rilievo) and rilievo.id() == layer.id():
                 return cantiere_id
         return None
 
     def is_layer_shown(self, cantiere_id, key):
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
+        return _layer_presente(layer)
 
     def show_layer(self, cantiere_id, key):
         """
@@ -210,11 +441,11 @@ class LayerManager:
         agganciato alla sincronizzazione delle modifiche).
         """
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        if layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None:
+        if _layer_presente(layer):
             return layer, True  # gia' visibile, nessuna nuova azione da fare
 
         layer = self._build_layer(cantiere_id, key)
-        QgsProject.instance().addMapLayer(layer)
+        self._aggiungi_in_mappa(layer, key)
         self._layers_by_cantiere.setdefault(cantiere_id, {})[key] = layer
         return layer, False
 
@@ -226,17 +457,16 @@ class LayerManager:
         spunta nel pannello, se per qualche motivo erano comunque finiti in
         mappa.
         """
+        self.rimuovi_riferimento(cantiere_id)
         layers = self._layers_by_cantiere.pop(cantiere_id, {})
         for layer in layers.values():
-            if QgsProject.instance().mapLayer(layer.id()) is not None:
+            if _layer_presente(layer):
                 QgsProject.instance().removeMapLayer(layer.id())
 
     def hide_layer(self, cantiere_id, key):
         """Rimuove dalla mappa il livello `key` del cantiere (spunta tolta)."""
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        if layer is None:
-            return
-        if QgsProject.instance().mapLayer(layer.id()) is not None:
+        if _layer_presente(layer):
             QgsProject.instance().removeMapLayer(layer.id())
         self._layers_by_cantiere.get(cantiere_id, {}).pop(key, None)
 
