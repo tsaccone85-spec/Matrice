@@ -104,7 +104,24 @@ class SyncHandler:
                 raise ValueError(
                     "Geometria senza US di appartenenza: selezionare la US prima di salvare."
                 )
-            self._log_modifica(table, feature.id(), "creazione", None, "nuova geometria", "creazione")
+            # record_id e' uuid: feature.id() e' solo l'fid intero del provider
+            # (DatatypeMismatch), serve il valore della chiave del record.
+            id_record = self._uuid_record(layer, feature, "id_geom" if table == "rilievo_geometria" else "id")
+            if id_record is None:
+                continue  # chiave non ancora nota (generata dal DB): niente riga di storico
+            self._log_modifica(table, id_record, "creazione", None, "nuova geometria", "creazione")
+
+    @staticmethod
+    def _uuid_record(layer, feature, key_field):
+        """Valore uuid (str) della chiave del record, o None se assente/non valido."""
+        import uuid
+        if layer.fields().indexOf(key_field) < 0:
+            return None
+        valore = feature[key_field]
+        try:
+            return str(uuid.UUID(str(valore)))
+        except (ValueError, AttributeError, TypeError):
+            return None
 
     # ------------------------------------------------------------------
     def _read_current_geom(self, table, key_field, id_record):

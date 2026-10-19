@@ -8,8 +8,9 @@ in core/layer_manager.py) ma due layer "memory" di QGIS del tutto separati,
 ciascuno con la propria spunta nel pannello "Livelli del cantiere" (key
 "localizzazione_cantiere" e "area_intervento"):
 
-- "Localizzazione di cantiere": un punto di sola lettura, costruito da
-  cantiere.lat/lng, solo per vedere dov'e' l'intervento in mappa.
+- "Localizzazione di cantiere": un punto costruito da cantiere.lat/lng;
+  spostandolo e salvando le modifiche del layer, la nuova posizione viene
+  scritta su Matrice (cantiere.lat/lng).
 - "Area di cantiere (disegno)": un poligono disegnabile a mano con gli
   strumenti di editing normali di QGIS (Attiva editing -> Aggiungi
   elemento poligono), precaricato con l'area gia' salvata su Matrice se
@@ -92,6 +93,8 @@ class LocalizzazioneManager:
         # l'operatore salva le modifiche del layer area in QGIS, così il
         # nuovo poligono viene scritto anche su Matrice.
         self.on_area_salvata = None
+        # Come on_area_salvata, per il punto di localizzazione spostato.
+        self.on_punto_salvato = None
         # WKT con cui layer_area() e' stato creato per ciascun cantiere:
         # confrontato con wkt_corrente() in remove_cantiere() per sapere se
         # l'operatore ha disegnato/modificato l'area senza ancora salvarla
@@ -121,7 +124,26 @@ class LocalizzazioneManager:
             layer.updateExtents()
         QgsProject.instance().addMapLayer(layer)
         self._layer_punto_per_cantiere[cantiere_id] = layer
+        # Spostando il punto in QGIS e salvando le modifiche del layer, la
+        # nuova posizione va scritta su Matrice (cantiere.lat/lng): senza
+        # questo il punto "tornava" dov'era alla riapertura.
+        layer.afterCommitChanges.connect(lambda cid=cantiere_id: self._punto_committato(cid))
         return layer
+
+    def _punto_committato(self, cantiere_id):
+        if self.on_punto_salvato is not None:
+            self.on_punto_salvato(cantiere_id)
+
+    def punto_corrente(self, cantiere_id):
+        """(lat, lng) del (primo) punto del layer di localizzazione, o None se assente/vuoto."""
+        layer = self._layer_punto_per_cantiere.get(cantiere_id)
+        if not _layer_presente(layer):
+            return None
+        feature = next(layer.getFeatures(), None)
+        if feature is None or feature.geometry().isNull():
+            return None
+        punto = feature.geometry().asPoint()
+        return punto.y(), punto.x()
 
     def layer_punto_esiste(self, cantiere_id):
         """True se il layer del punto e' gia' stato creato e risulta ancora nel progetto."""

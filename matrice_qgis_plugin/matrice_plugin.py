@@ -38,6 +38,8 @@ _GRUPPO_LIVELLI = {
     "saggio_progettazione": "Progettazione",
     "carotaggio_progettazione": "Progettazione",
     "buffer_progettazione": "Progettazione",
+    "survey_ur": "Progettazione",
+    "survey_ritrovamento": "Progettazione",
 }
 from .core.localizzazione_manager import LocalizzazioneManager, calcola_buffer_wkt
 from .core.matrice_api import MatriceApi
@@ -115,6 +117,7 @@ class MatricePlugin:
         self.localizzazione_manager = LocalizzazioneManager()
         # "Salva modifiche" sul layer area di QGIS => salva anche su Matrice.
         self.localizzazione_manager.on_area_salvata = self.handle_salva_area
+        self.localizzazione_manager.on_punto_salvato = self.handle_salva_punto
         self.print_layout_manager = PrintLayoutManager(
             os.path.join(PLUGIN_DIR, "config", "layouts", "localizzazione_1_200.qpt")
         )
@@ -1210,6 +1213,23 @@ class MatricePlugin:
             return
         self.localizzazione_manager.segna_area_salvata(cantiere_id, wkt)
         self.iface.messageBar().pushSuccess("Matrice", "Area dell'intervento salvata.")
+
+    def handle_salva_punto(self, cantiere_id):
+        """
+        Scrive su Matrice (cantiere.lat/lng) il punto di localizzazione
+        spostato in QGIS, al salvataggio delle modifiche del layer. Stesso
+        requisito di ruolo di handle_salva_area.
+        """
+        posizione = self.localizzazione_manager.punto_corrente(cantiere_id)
+        if posizione is None:
+            return
+        lat, lng = posizione
+        try:
+            self.matrice_api.update_punto_localizzazione(cantiere_id, lat, lng, self.session.access_token)
+        except Exception as exc:
+            self._show_warning(str(exc))
+            return
+        self.iface.messageBar().pushSuccess("Matrice", "Posizione del cantiere salvata.")
 
     def _handle_importa_area_da_file(self):
         """

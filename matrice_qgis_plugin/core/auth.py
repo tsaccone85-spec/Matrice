@@ -167,7 +167,12 @@ class SessionManager:
         config.setName(AUTH_CONFIG_NAME)
         config.setConfig("username", username)
         config.setConfig("password", password)
-        auth_manager.storeAuthenticationConfig(config)
+        if esistenti:
+            # id gia' presente: storeAuthenticationConfig lo rifiuta ("ID di
+            # configurazione non unico"), si aggiorna la config esistente.
+            auth_manager.updateAuthenticationConfig(config)
+        else:
+            auth_manager.storeAuthenticationConfig(config)
 
     def _configs_salvate(self):
         auth_manager = QgsApplication.authManager()

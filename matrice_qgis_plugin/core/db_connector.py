@@ -112,16 +112,26 @@ class MatriceConnection:
     # ------------------------------------------------------------------
     def _fetch_all(self, sql, params):
         conn = self._connect()
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, params)
+                return cur.fetchall()
+        except Exception:
+            # Senza rollback la connessione condivisa resta in transazione
+            # abortita (InFailedSqlTransaction) e blocca ogni query successiva.
+            conn.rollback()
+            raise
 
     def execute(self, sql, params):
         """Scrittura generica, usata da sync_handler per i commit (sezione 5)."""
         conn = self._connect()
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     def execute_returning(self, sql, params):
         """Come execute(), ma per una SELECT: ritorna le righe (lista di dict)."""

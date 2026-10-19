@@ -209,6 +209,10 @@ class MatriceApi:
         """
         return self.rest.update("cantiere", "id", cantiere_id, {"area_geom_wkt": wkt}, access_token)
 
+    def update_punto_localizzazione(self, cantiere_id, lat, lng, access_token):
+        """Scrive il punto spostato in QGIS su cantiere.lat/lng (stessa policy RLS di update_area_intervento)."""
+        return self.rest.update("cantiere", "id", cantiere_id, {"lat": lat, "lng": lng}, access_token)
+
     def update_area_buffer(self, cantiere_id, wkt, access_token):
         """Scrive il buffer generato attorno all'area di indagine su cantiere.area_buffer_geom_wkt."""
         return self.rest.update("cantiere", "id", cantiere_id, {"area_buffer_geom_wkt": wkt}, access_token)
