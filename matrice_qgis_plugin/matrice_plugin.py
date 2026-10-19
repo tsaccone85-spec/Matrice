@@ -205,18 +205,18 @@ class MatricePlugin:
         icona_progettazione = QgsApplication.getThemeIcon("/mActionAddPolygon.svg")
         self.progettazione_action = QAction(icona_progettazione, "Progettazione", self.iface.mainWindow())
         menu_progettazione = QMenu(self.iface.mainWindow())
-        azione_trincea = menu_progettazione.addAction("Trincea…")
+        azione_trincea = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionAddPolygon.svg"), "Trincea…")
         azione_trincea.triggered.connect(lambda: self._apri_nuovo_rettangolo("trincea"))
-        azione_saggio = menu_progettazione.addAction("Saggio…")
+        azione_saggio = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionAddPolygon.svg"), "Saggio…")
         azione_saggio.triggered.connect(lambda: self._apri_nuovo_rettangolo("saggio"))
-        azione_ur = menu_progettazione.addAction("Unità di Ricognizione (UR)…")
+        azione_ur = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionAddPolygon.svg"), "Unità di Ricognizione (UR)…")
         azione_ur.triggered.connect(self._disegna_unita_ricognizione)
-        azione_ritrovamento = menu_progettazione.addAction("Rinvenimento…")
+        azione_ritrovamento = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionCapturePoint.svg"), "Rinvenimento…")
         azione_ritrovamento.triggered.connect(self._apri_nuovo_ritrovamento)
-        azione_buffer = menu_progettazione.addAction("Crea buffer area di indagine…")
+        azione_buffer = menu_progettazione.addAction(QgsApplication.getThemeIcon("/algorithms/mAlgorithmBuffer.svg"), "Crea buffer area di indagine…")
         azione_buffer.triggered.connect(self._crea_buffer_area)
         menu_progettazione.addSeparator()
-        azione_ruota = menu_progettazione.addAction("Ruota elemento")
+        azione_ruota = menu_progettazione.addAction(QgsApplication.getThemeIcon("/mActionRotateFeature.svg"), "Ruota elemento")
         azione_ruota.triggered.connect(self._ruota_elemento_progettazione)
         self.progettazione_action.setMenu(menu_progettazione)
         self.progettazione_action.setEnabled(False)
@@ -702,9 +702,16 @@ class MatricePlugin:
         vertici dal tool nativo resta quella che poi si ricalcola in
         `angolo_rotazione_gradi` (vedi nota in rettangolo_progettazione.py).
         """
-        azione_nativa = self.iface.actionRotateFeature()
-        if azione_nativa is not None:
-            azione_nativa.trigger()
+        # QgisInterface non espone actionRotateFeature(): si cerca l'azione
+        # nativa per objectName nella finestra principale.
+        azione_nativa = self.iface.mainWindow().findChild(QAction, "mActionRotateFeature")
+        if azione_nativa is None:
+            self.iface.messageBar().pushWarning("Progettazione", "Strumento Ruota elementi non trovato in QGIS.")
+            return
+        layer = self.iface.activeLayer()
+        if layer is not None and not layer.isEditable():
+            layer.startEditing()
+        azione_nativa.trigger()
 
     def _apri_nuovo_ritrovamento(self):
         """
