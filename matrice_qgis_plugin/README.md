@@ -144,38 +144,56 @@ dello stesso colore ne' facilmente confondibili tra loro.
   scrivere, nessuna scrittura su Matrice senza conferma esplicita
   (`core/gps_import.py`)
 
-## Menu "Progettazione" (toolbar, 2026-10-12/13)
+## Menu "Progettazione" (toolbar, aggiornato 2026-10-19, v0.2.0)
 
-Abilitato solo mentre e' attivo in QGIS uno dei layer del flusso
-Progettazione (`CHIAVI_LAYER_PROGETTAZIONE` in `matrice_plugin.py`):
+Il bottone "Progettazione" si abilita all'apertura della tavola di un
+cantiere. Le voci che creano o modificano sono attive solo in un cantiere
+di Progettazione **non chiuso** (`_aggiorna_menu_progettazione` in
+`matrice_plugin.py`):
 
-- **"Trincea..."/"Saggio..."**: rettangolo con larghezza/lunghezza date,
-  posizionato con un click (`core/rettangolo_progettazione.py`), poi
-  ruotabile con "Ruota elemento". Tabelle `trincea_progettazione`/
+- **"Trincea..."/"Saggio..."**: chiede larghezza/lunghezza/profondita', poi
+  posizionamento CONTINUO con click sulla mappa (stesso elemento ripetuto
+  sul layer giusto; Esc o tasto destro per finire)
+  (`core/rettangolo_progettazione.py`). Tabelle `trincea_progettazione`/
   `saggio_progettazione`.
 - **"Unita' di Ricognizione (UR)..."**: poligono libero, editing nativo
-  QGIS (nessun tool custom, a differenza di trincea/saggio). Tabella
-  `survey_ur` (colonna `geom`, vista `v_survey_ur_qgis`).
-- **"Rinvenimento..."**: dialog (sceglie la UR di appartenenza --
-  obbligatoria) + un click per posizionare il punto
-  (`core/ritrovamento_progettazione.py`). Tabella `survey_ritrovamento`,
-  vista `v_survey_ritrovamento_qgis` con trigger `INSTEAD OF INSERT`
-  dedicato che traduce la geometria in `lat`/`lng`.
-- **"Crea buffer area di indagine..."**: chiede una distanza (metri) ad
-  ogni generazione, calcola un buffer attorno all'area di cantiere
-  (riproiezione locale azimutale equidistante) e lo salva su
-  `cantiere.area_buffer_geom_wkt` -- guida visiva per disegnare le UR,
-  nessun vincolo geometrico imposto. Layer di sola lettura, rigenerato ad
-  ogni apertura cantiere, rimosso al cambio cantiere
-  (`core/localizzazione_manager.py` `layer_buffer`).
-- **"Ruota elemento"**: richiama lo strumento nativo QGIS "Ruota
-  elementi" (nessuna reimplementazione).
+  QGIS. Tabella `survey_ur`.
+- **"Carotaggio..."**: carotaggio PREVISTO dalla progettazione, click
+  continuo. Tabella PROPRIA `carotaggio_progettazione` (vista
+  `v_carotaggio_progettazione_qgis`, codice CAR-01, CAR-02... automatico),
+  separata da `carotaggio` della Lettura carotaggi.
+- **"Crea buffer area di indagine..."**: buffer attorno all'area di cantiere
+  salvato su `cantiere.area_buffer_geom_wkt`.
+- **"Sposta elemento"/"Ruota elemento"**: strumenti nativi QGIS.
+- **Rinvenimenti**: NON si creano da QGIS (arrivano dall'app da campo); da
+  QGIS si possono solo spostare/modificare (trigger INSTEAD OF UPDATE su
+  `v_survey_ritrovamento_qgis`, INSERT revocato a `qgis_rilievo`).
+- **"Chiudi progettazione..."**: segna `cantiere.stato_progettazione =
+  'completato'` (stand-by, riapribile con "Riapri progettazione") e propone
+  il flusso a valle: **Lettura carotaggi** (`tipo_intervento='carotaggi'`) o
+  **Assistenza in corso d'opera** (`'sorveglianza'`). Il cantiere a valle
+  nasce con `cantiere.progettazione_origine_id` e mostra in SOLA LETTURA
+  (gruppo "Da progettazione (sola lettura)") i carotaggi previsti oppure
+  trincee e saggi di progetto (`LayerManager.carica_riferimento`,
+  `RIFERIMENTI_PER_TIPO_INTERVENTO`). Per cantieri gia' esistenti:
+  "Collega progettazione di riferimento...".
 
-All'apertura di un cantiere, il CRS di progetto QGIS si imposta sul
-sistema di riferimento personale dell'utente loggato
-(`core/sistema_riferimento.py`, mirror di `SISTEMI_RIFERIMENTO` in
-`app/js/schema.js`) -- solo visualizzazione/digitazione, l'archiviazione
+I livelli del flusso stanno nel gruppo "Progettazione" dell'albero livelli
+(`CHIAVI_GRUPPO_PROGETTAZIONE` in `core/layer_manager.py`); il layer
+"Carotaggi" della Lettura carotaggi resta fuori.
+
+All'apertura di un cantiere la mappa si ingrandisce sul cantiere
+(`core/vista_cantiere.py`: evita "Point outside of projection domain" a
+scala mondiale) e il CRS di progetto si imposta sul sistema di riferimento
+personale dell'utente (`core/sistema_riferimento.py`); l'archiviazione
 resta sempre WGS84/4326.
+
+### Database (migrazioni applicate sul progetto Supabase)
+
+`carotaggio_progettazione` (+ viste `_qgis`/`_app`), colonna
+`cantiere.progettazione_origine_id`, trigger che compilano
+`created_at`/`updated_at` quando QGIS invia NULL (`imposta_timestamp_se_null`),
+default delle colonne delle viste `*_qgis`, permessi `qgis_rilievo`.
 
 ## Cosa resta da completare (segnato con `# TODO` nel codice)
 

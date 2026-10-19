@@ -12,7 +12,8 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), "login_di
 
 
 class LoginDialog(QDialog, FORM_CLASS):
-    def __init__(self, parent=None, remember_default=False, verify_callback=None):
+    def __init__(self, parent=None, remember_default=False, verify_callback=None,
+                 username_default="", password_default=""):
         """
         `verify_callback(username, password, remember_me) -> (ok, error_message)`:
         chiamato quando si preme "Accedi", PRIMA di chiudere la finestra.
@@ -21,10 +22,16 @@ class LoginDialog(QDialog, FORM_CLASS):
         l'operatore vedesse alcun messaggio (l'errore finiva su un pannello
         ancora nascosto). Se omesso, "Accedi" chiude semplicemente la
         finestra senza verificare nulla.
+
+        `username_default`/`password_default`: valori salvati da un login
+        precedente con "Ricordami" (SessionManager.saved_credentials()),
+        gia' precompilati cosi' l'operatore deve solo premere "Accedi".
         """
         super().__init__(parent)
         self.setupUi(self)
         self.rememberCheckBox.setChecked(remember_default)
+        self.usernameEdit.setText(username_default)
+        self.passwordEdit.setText(password_default)
         self.errorLabel.setText("")
         self._verify_callback = verify_callback
         # Il file .ui e' scritto a mano (non generato da Qt Designer), quindi

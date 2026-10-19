@@ -68,11 +68,18 @@ class SessionManager:
             return False
         return datetime.datetime.now() < self.token_expiry
 
-    def has_saved_credentials(self):
-        # QgsAuthManager non ha un metodo "configIdsForMethod": si scorrono
-        # le configurazioni salvate e si controlla il nome (vedi
-        # _find_saved_config), senza bisogno di filtrare prima per metodo.
-        return self._find_saved_config() is not None
+    def saved_credentials(self):
+        """
+        (username, password) salvati con "Ricordami", o (None, None) se non
+        ce ne sono -- da usare per precompilare il form di login (bug
+        corretto: la spunta "Ricordami" salvava le credenziali ma nessun
+        punto del plugin le rileggeva mai, quindi all'apertura successiva
+        l'operatore si ritrovava comunque i campi vuoti).
+        """
+        config = self._find_saved_config()
+        if config is None:
+            return None, None
+        return config.config("username") or None, config.config("password") or None
 
     def login(self, username, password, remember=False):
         """

@@ -11,10 +11,10 @@ import os
 
 import configparser
 
-from qgis.core import QgsApplication, QgsCoordinateReferenceSystem, QgsFeature, QgsFeatureRequest, QgsGeometry, QgsProject, QgsRectangle
+from qgis.core import QgsApplication, QgsDefaultValue, QgsCoordinateReferenceSystem, QgsFeature, QgsFeatureRequest, QgsGeometry, QgsProject, QgsRectangle
 from qgis.gui import QgsMapTool
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
-from qgis.PyQt.QtWidgets import QAction, QDockWidget, QFileDialog, QMenu, QMessageBox, QToolButton
+from qgis.PyQt.QtWidgets import QAction, QDockWidget, QFileDialog, QInputDialog, QMenu, QMessageBox, QToolButton
 
 from .core.auth import SessionManager
 from .core.basemap_manager import BasemapManager
@@ -22,7 +22,7 @@ from .core.db_connector import MatriceConnection
 from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
 from .core.join_elenchi import aggiungi_join_elenchi
-from .core.layer_manager import LAYER_SOURCES, LayerManager
+from .core.layer_manager import LAYER_SOURCES, RIFERIMENTI_PER_TIPO_INTERVENTO, LayerManager
 
 # Raggruppamento del pannello "Livelli del cantiere" per flusso di lavoro
 # (chiesto da Tommaso, 2026-10-13): i livelli provenienti dalla fase di
@@ -34,6 +34,9 @@ _GRUPPO_LIVELLI = {
     "progettazione_vincolo": "Progettazione",
     "trincea_progettazione": "Progettazione",
     "saggio_progettazione": "Progettazione",
+    "survey_ur": "Progettazione",
+    "survey_ritrovamento": "Progettazione",
+    "carotaggio_progettazione": "Progettazione",
 }
 from .core.localizzazione_manager import LocalizzazioneManager, calcola_buffer_wkt
 from .core.matrice_api import MatriceApi
@@ -43,6 +46,7 @@ from .core.rettangolo_progettazione import PosizionaRettangoloMapTool
 from .core.ritrovamento_progettazione import PosizionaPuntoMapTool
 from .core.sistema_riferimento import SISTEMI_RIFERIMENTO_EPSG
 from .core.sync_handler import SyncHandler
+from .core.vista_cantiere import estensione_cantiere_wgs84, vista_canvas_valida, zoom_su_estensione_wgs84
 from .core.style_manager import StyleManager
 from .core.quick_views import QuickViewManager
 from .ui.main_dock_widget import MainDockWidget
@@ -52,14 +56,23 @@ from .ui.gps_import_dialog import GpsImportDialog
 from .ui.nuovo_cantiere_dialog import NuovoCantiereDialog
 from .ui.punto_dettaglio_dialog import PuntoDettaglioDialog
 from .ui.buffer_area_dialog import BufferAreaDialog
+from .ui.carotaggio_progettazione_dialog import CarotaggioProgettazioneDialog
 from .ui.rettangolo_progettazione_dialog import RettangoloProgettazioneDialog
-from .ui.ritrovamento_dialog import RitrovamentoDialog
 from .ui.us_detail_dialog import UsDetailDialog
 
 # Chiavi LAYER_SOURCES (layer_manager.py) che attivano il menu "Progettazione"
-# della toolbar: un rettangolo (trincea o saggio) si crea solo mentre uno dei
-# due layer e' quello attivo in QGIS (vedi _handle_active_layer_changed).
-CHIAVI_LAYER_PROGETTAZIONE = ("trincea_progettazione", "saggio_progettazione", "survey_ur", "survey_ritrovamento")
+# della toolbar: un rettangolo (trincea o saggio), una UR/rinvenimento o un
+# carotaggio si creano solo mentre uno di questi layer e' quello attivo in
+# QGIS (vedi _handle_active_layer_changed). "carotaggio" non fa parte del
+# flusso "Progettazione Archeologica" in senso stretto (e' uno dei tre layer
+# puntuali lat/lng sincronizzati da PointPositionSyncHandler), ma l'operatore
+# vuole crearlo con lo stesso identico percorso -- attiva il livello, si
+# accende il menu, "Carotaggio..." chiede le misure, click sulla mappa per
+# posizionarlo -- quindi resta nello stesso elenco invece di avere un
+# meccanismo di attivazione separato e meno intuitivo.
+CHIAVI_LAYER_PROGETTAZIONE = (
+    "trincea_progettazione", "saggio_progettazione", "survey_ur", "survey_ritrovamento", "carotaggio_progettazione",
+)
 
 PLUGIN_DIR = os.path.dirname(__file__)
 
@@ -210,13 +223,40 @@ class MatricePlugin:
         azione_saggio.triggered.connect(lambda: self._apri_nuovo_rettangolo("saggio"))
         azione_ur = menu_progettazione.addAction("Unità di Ricognizione (UR)…")
         azione_ur.triggered.connect(self._disegna_unita_ricognizione)
-        azione_ritrovamento = menu_progettazione.addAction("Rinvenimento…")
-        azione_ritrovamento.triggered.connect(self._apri_nuovo_ritrovamento)
+        azione_carotaggio = menu_progettazione.addAction("Carotaggio…")
+        azione_carotaggio.triggered.connect(self._apri_nuovo_carotaggio)
         azione_buffer = menu_progettazione.addAction("Crea buffer area di indagine…")
         azione_buffer.triggered.connect(self._crea_buffer_area)
         menu_progettazione.addSeparator()
+        azione_sposta = menu_progettazione.addAction("Sposta elemento")
+        azione_sposta.triggered.connect(self._sposta_elemento_progettazione)
         azione_ruota = menu_progettazione.addAction("Ruota elemento")
         azione_ruota.triggered.connect(self._ruota_elemento_progettazione)
+        menu_progettazione.addSeparator()
+        self.azione_chiudi_progettazione = menu_progettazione.addAction("Chiudi progettazione…")
+        self.azione_chiudi_progettazione.triggered.connect(self._chiudi_progettazione)
+        self.azione_riapri_progettazione = menu_progettazione.addAction("Riapri progettazione")
+        self.azione_riapri_progettazione.triggered.connect(self._riapri_progettazione)
+        self.azione_riapri_progettazione.setVisible(False)
+        # Passaggio ai flussi a valle: visibili a progettazione chiusa.
+        self.azione_avvia_carotaggi = menu_progettazione.addAction("Avvia Lettura carotaggi…")
+        self.azione_avvia_carotaggi.triggered.connect(lambda: self._avvia_flusso_da_progettazione("carotaggi"))
+        self.azione_avvia_carotaggi.setVisible(False)
+        self.azione_avvia_sorveglianza = menu_progettazione.addAction("Avvia Assistenza in corso d'opera…")
+        self.azione_avvia_sorveglianza.triggered.connect(lambda: self._avvia_flusso_da_progettazione("sorveglianza"))
+        self.azione_avvia_sorveglianza.setVisible(False)
+        # Nei cantieri a valle (carotaggi/sorveglianza): scelta della Progettazione di riferimento.
+        self.azione_collega_progettazione = menu_progettazione.addAction("Collega progettazione di riferimento…")
+        self.azione_collega_progettazione.triggered.connect(self._collega_progettazione)
+        self.azione_collega_progettazione.setVisible(False)
+        # Voci che modificano la progettazione: spente quando e' chiusa (stand-by).
+        self._azioni_modifica_progettazione = [
+            azione_trincea, azione_saggio, azione_ur, azione_carotaggio,
+            azione_buffer, azione_sposta, azione_ruota,
+        ]
+        self._stato_progettazione = None
+        self._tipo_intervento_corrente = None
+        self._progettazione_origine_id = None
         self.progettazione_action.setMenu(menu_progettazione)
         self.progettazione_action.setEnabled(False)
         self.toolbar.addAction(self.progettazione_action)
@@ -322,10 +362,13 @@ class MatricePlugin:
         QMessageBox.information(self.iface.mainWindow(), "Informazioni su Matrice", f"{nome} - v{versione}\n\n{descrizione}")
 
     def _show_login_dialog(self):
+        username_salvato, password_salvata = self.session.saved_credentials()
         dialog = LoginDialog(
             self.iface.mainWindow(),
-            remember_default=self.session.has_saved_credentials(),
+            remember_default=username_salvato is not None,
             verify_callback=self._verify_login,
+            username_default=username_salvato or "",
+            password_default=password_salvata or "",
         )
         if dialog.exec_():
             # A questo punto il login e' gia' riuscito (_verify_login lo ha
@@ -381,30 +424,57 @@ class MatricePlugin:
             return
         self.dock_widget.populate_cantieri(cantieri)
 
-    def _handle_nuovo_cantiere(self):
+    def _handle_nuovo_cantiere(self, tipo_preselezionato=None, precompilati=None, progettazione_origine_id=None):
         """
         Sezione 4, "Crea cantiere da QGIS": apre il dialog, risolve
         referente e azienda, inserisce la riga su Matrice e apre subito
         la tavola appena creata -- stesso punto di arrivo di un cantiere
         scelto dall'elenco (handle_open_tavola).
         """
-        dialog = NuovoCantiereDialog(self.iface.mainWindow())
+        token = self.session.access_token
+        try:
+            tipi_consentiti = self.matrice_api.tipi_intervento_consentiti(token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Matrice", str(exc))
+            return
+        if not tipi_consentiti:
+            self.iface.messageBar().pushWarning(
+                "Matrice",
+                "Il profilo collegato non e' abilitato a nessun tipo di lavoro: "
+                "contattare il referente dell'azienda su Matrice.",
+            )
+            return
+
+        if tipo_preselezionato and tipo_preselezionato not in [t[0] for t in tipi_consentiti]:
+            self.iface.messageBar().pushWarning(
+                "Matrice",
+                "Il tuo profilo non è abilitato a questo tipo di lavoro: contattare il referente dell'azienda su Matrice.",
+            )
+            return
+
+        dialog = NuovoCantiereDialog(
+            tipi_consentiti, self.iface.mainWindow(),
+            tipo_preselezionato=tipo_preselezionato, precompilati=precompilati,
+        )
         if not dialog.exec_():
             return
 
         valori = dialog.valori()
-        token = self.session.access_token
 
-        referente = self.matrice_api.trova_utente_per_email(valori["email_referente"], token)
-        if referente is not None:
-            referente_campo_utente_id = referente["id"]
-        else:
+        email_referente = valori["email_referente"]
+        if not email_referente:
             referente_campo_utente_id = self.session.user_id
-            self.iface.messageBar().pushWarning(
-                "Matrice",
-                "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
-                "sull'utente attualmente connesso.",
-            )
+        else:
+            referente = self.matrice_api.trova_utente_per_email(email_referente, token)
+            if referente is not None:
+                referente_campo_utente_id = referente["id"]
+            else:
+                referente_campo_utente_id = self.session.user_id
+                self.iface.messageBar().pushWarning(
+                    "Matrice",
+                    "Nessun utente trovato con questa email: il referente di campo e' stato impostato "
+                    "sull'utente attualmente connesso.",
+                )
 
         try:
             azienda_id = self.matrice_api.azienda_utente_loggato(token)
@@ -419,13 +489,31 @@ class MatricePlugin:
                 "azienda_id": azienda_id,
                 "created_by": self.session.user_id,
             }
+            if progettazione_origine_id and valori["tipo_intervento"] in RIFERIMENTI_PER_TIPO_INTERVENTO:
+                campi["progettazione_origine_id"] = progettazione_origine_id
             nuovo = self.matrice_api.crea_cantiere(campi, token)
-            # Se il referente di campo e' un utente diverso da chi crea il
-            # cantiere, serve anche una riga cantiere_accesso: la RLS su
-            # `cantiere` (has_cantiere_access) mostra la riga solo a chi ha
-            # un accesso esplicito, e il referente non lo ha automaticamente
-            # solo perche' e' indicato in referente_campo_utente_id (stessa
-            # regola della web app, vedi dashboard.js `nuovoCantiere`).
+            # has_cantiere_access() (RLS su `cantiere`) mostra la riga solo
+            # a chi ha ruolo "referente" nella stessa azienda, oppure una
+            # riga esplicita in cantiere_accesso: chi crea il cantiere non
+            # e' detto che sia "referente" (puo' essere un "collaboratore"),
+            # quindi senza questa riga il cantiere resterebbe invisibile
+            # anche a chi l'ha appena creato. Va bene comunque inserirla
+            # anche per un "referente" (vede gia' il cantiere lo stesso,
+            # la riga in piu' non cambia nulla).
+            self.matrice_api.rest.insert(
+                "cantiere_accesso",
+                {
+                    "cantiere_id": nuovo["id"],
+                    "utente_id": self.session.user_id,
+                    "ruolo_accesso": "editor",
+                },
+                token,
+            )
+            # Se il referente di campo indicato e' un utente diverso da chi
+            # crea il cantiere, serve la stessa riga anche per lui: non ha
+            # accesso automatico solo perche' e' indicato in
+            # referente_campo_utente_id (stessa regola della web app, vedi
+            # dashboard.js `nuovoCantiere`).
             if referente_campo_utente_id != self.session.user_id:
                 self.matrice_api.rest.insert(
                     "cantiere_accesso",
@@ -467,6 +555,7 @@ class MatricePlugin:
         self.dock_widget.reset()
         self.dock_widget.hide()
         self.toolbar.setVisible(True)
+        self.progettazione_action.setEnabled(False)
 
     def handle_open_tavola(self, cantiere_id, nome_cantiere=None):
         """
@@ -485,7 +574,19 @@ class MatricePlugin:
         diretti -- carotaggio, colonna_stratigrafica, sezione_prospetto --
         che passano da PointPositionSyncHandler per la regola "quota
         manuale vince, altrimenti ricalcolo dal DEM".
+
+        Il bottone "Progettazione" della toolbar si abilita qui, non in base
+        al layer attivo in QGIS (bug segnalato 2026-10-17: l'abilitazione
+        legata al layer attivo richiedeva anche un click sul nome del layer
+        nel pannello "Livelli" nativo di QGIS, un passaggio in piu' non
+        spiegato da nessuna parte che lasciava il bottone grigio senza
+        alcuna indicazione del perche'). Da qui in avanti basta che la
+        tavola di un cantiere sia aperta: ogni singola voce del menu
+        (Trincea/Saggio/UR/Carotaggio) controlla comunque da
+        sola, al momento del click, di avere il livello giusto a disposizione.
         """
+        self.progettazione_action.setEnabled(True)
+        self._carica_stato_progettazione(cantiere_id)
         cantiere_precedente = self.session.cantiere_corrente_id
         if cantiere_precedente and cantiere_precedente != cantiere_id:
             self._rimuovi_layer_cantiere(cantiere_precedente)
@@ -544,6 +645,9 @@ class MatricePlugin:
             if has_data[key]:
                 self._watch_layer_sync(key, layer, cantiere_id)
 
+        # Cantieri a valle (carotaggi / sorveglianza): elementi di progetto in sola lettura.
+        self._carica_riferimenti_progettazione(cantiere_id)
+
         layer_states = [
             (key, opts["display_name"], has_data[key], _GRUPPO_LIVELLI.get(key))
             for key, opts in LAYER_SOURCES.items()
@@ -578,11 +682,276 @@ class MatricePlugin:
         if has_data.get("carotaggio"):
             self.style_manager.apply_esito_style(layers["carotaggio"])
 
+        # Vista sul cantiere (core/vista_cantiere.py): senza, con i livelli di
+        # Progettazione quasi tutti vuoti, la mappa restava sul mondo intero e
+        # i click per posizionare cadevano fuori dalla proiezione.
+        self._zoom_su_cantiere(cantiere_id, localizzazione)
+
         # Stato iniziale del pannello "US attive" per questo cantiere (il
         # layer attivo in QGIS potrebbe non essere cambiato dall'apertura
         # della tavola precedente, quindi currentLayerChanged non scatta da
         # solo -- va valutato subito anche qui).
         self._handle_active_layer_changed(self.iface.activeLayer())
+
+    # ------------------------------------------------------------------
+    # Chiusura / stand-by della Progettazione
+    # ------------------------------------------------------------------
+    def _carica_stato_progettazione(self, cantiere_id):
+        """Legge tipo e stato del cantiere aperto e aggiorna le voci del menu. Mai bloccante."""
+        try:
+            tipo, stato, origine = self.matrice_api.get_stato_progettazione(cantiere_id, self.session.access_token)
+        except Exception:
+            tipo, stato, origine = None, None, None
+        self._tipo_intervento_corrente = tipo
+        self._stato_progettazione = stato
+        self._progettazione_origine_id = origine
+        self._aggiorna_menu_progettazione()
+
+    def _carica_riferimenti_progettazione(self, cantiere_id):
+        """
+        Nei cantieri a valle collegati a una Progettazione mostra in sola
+        lettura i suoi elementi: carotaggi previsti (Lettura carotaggi),
+        trincee e saggi di progetto (Assistenza in corso d'opera). Mai
+        bloccante.
+        """
+        chiavi = RIFERIMENTI_PER_TIPO_INTERVENTO.get(self._tipo_intervento_corrente)
+        if not chiavi or not self._progettazione_origine_id:
+            return
+        try:
+            layers = self.layer_manager.carica_riferimento(cantiere_id, self._progettazione_origine_id, chiavi)
+        except Exception as exc:
+            self.iface.messageBar().pushWarning("Progettazione", f"Elementi di progetto non caricati: {exc}")
+            return
+        vuoti = all(layer.featureCount() == 0 for layer in layers)
+        nome = self.matrice_api.nome_cantiere(self._progettazione_origine_id, self.session.access_token) or "progettazione"
+        self.iface.messageBar().pushInfo(
+            "Progettazione",
+            f"Nessun elemento previsto nella progettazione «{nome}»." if vuoti
+            else f"Mostrati in sola lettura gli elementi previsti dalla progettazione «{nome}».",
+        )
+
+    def _progettazione_chiusa(self):
+        return self._stato_progettazione == "completato"
+
+    def _aggiorna_menu_progettazione(self):
+        chiusa = self._progettazione_chiusa()
+        tipo = self._tipo_intervento_corrente
+        e_progettazione = tipo == "progettazione"
+        # Creare/spostare elementi di progetto solo in un cantiere di
+        # Progettazione aperto (tipo sconosciuto = comportamento precedente).
+        modificabile = tipo in (None, "progettazione") and not chiusa
+        for azione in self._azioni_modifica_progettazione:
+            azione.setEnabled(modificabile)
+        self.azione_chiudi_progettazione.setVisible(e_progettazione and not chiusa)
+        self.azione_riapri_progettazione.setVisible(e_progettazione and chiusa)
+        self.azione_avvia_carotaggi.setVisible(e_progettazione and chiusa)
+        self.azione_avvia_sorveglianza.setVisible(e_progettazione and chiusa)
+        self.azione_collega_progettazione.setVisible(tipo in RIFERIMENTI_PER_TIPO_INTERVENTO)
+
+    def _progettazione_modificabile(self):
+        """False (con avviso chiaro) se la progettazione e' stata chiusa."""
+        if self._progettazione_chiusa():
+            QMessageBox.information(
+                self.iface.mainWindow(), "Progettazione",
+                "La progettazione di questo cantiere è chiusa (in stand-by).\n"
+                "Per modificarla scegli «Riapri progettazione» dal menu Progettazione.",
+            )
+            return False
+        return True
+
+    def _chiudi_progettazione(self):
+        """
+        «Chiudi progettazione»: segna la progettazione come completata (resta
+        in stand-by, riapribile) e propone di avviare il flusso «Lettura
+        carotaggi» come cantiere a parte. I dati di progetto non si toccano.
+        """
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            return
+        risposta = QMessageBox.question(
+            self.iface.mainWindow(), "Chiudi progettazione",
+            "Chiudere la progettazione di questo cantiere?\n\n"
+            "Trincee, saggi, UR e carotaggi di progetto restano salvati ma non "
+            "saranno più modificabili da QGIS finché non la riapri.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if risposta != QMessageBox.Yes:
+            return
+        try:
+            riga = self.matrice_api.set_stato_progettazione(cantiere_id, "completato", self.session.access_token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Progettazione", str(exc))
+            return
+        if riga is None:
+            self.iface.messageBar().pushWarning(
+                "Progettazione",
+                "Chiusura non riuscita: serve il ruolo «referente» sul cantiere. Contatta il referente dell'azienda.",
+            )
+            return
+        self._stato_progettazione = "completato"
+        self._aggiorna_menu_progettazione()
+        strumento_attivo = self.iface.mapCanvas().mapTool()
+        if isinstance(strumento_attivo, (PosizionaRettangoloMapTool, PosizionaPuntoMapTool)):
+            self.iface.mapCanvas().unsetMapTool(strumento_attivo)
+        self.iface.messageBar().pushSuccess("Progettazione", "Progettazione chiusa: il cantiere resta in stand-by.")
+
+        scelta = QMessageBox(self.iface.mainWindow())
+        scelta.setWindowTitle("Prossimo flusso di lavoro")
+        scelta.setText(
+            "Progettazione chiusa. Quale flusso di lavoro vuoi avviare ora?\n\n"
+            "• Lettura carotaggi: legge i carotaggi previsti e li mostra in mappa.\n"
+            "• Assistenza in corso d'opera: mostra in mappa trincee e saggi di progetto.\n\n"
+            "Puoi avviare l'altro in qualsiasi momento dal menu Progettazione."
+        )
+        pulsante_carotaggi = scelta.addButton("Lettura carotaggi", QMessageBox.AcceptRole)
+        pulsante_sorveglianza = scelta.addButton("Assistenza in corso d'opera", QMessageBox.AcceptRole)
+        scelta.addButton("Non ora", QMessageBox.RejectRole)
+        scelta.exec_()
+        if scelta.clickedButton() == pulsante_carotaggi:
+            self._avvia_flusso_da_progettazione("carotaggi")
+        elif scelta.clickedButton() == pulsante_sorveglianza:
+            self._avvia_flusso_da_progettazione("sorveglianza")
+
+    def _avvia_flusso_da_progettazione(self, tipo):
+        """
+        Crea il cantiere a valle ('carotaggi' = Lettura carotaggi,
+        'sorveglianza' = Assistenza in corso d'opera) collegato alla
+        Progettazione aperta (progettazione_origine_id): il nuovo cantiere
+        mostra in sola lettura i suoi carotaggi / trincee / saggi.
+        """
+        origine_id = self.session.cantiere_corrente_id
+        if not origine_id:
+            return
+        try:
+            base = self.matrice_api.rest.select(
+                "cantiere", self.session.access_token,
+                params={"id": f"eq.{origine_id}", "select": "nome_cantiere,comune,provincia,regione"},
+            )
+            base = base[0] if base else {}
+        except Exception:
+            base = {}
+        suffisso = "Lettura carotaggi" if tipo == "carotaggi" else "Assistenza in corso d'opera"
+        precompilati = dict(base)
+        if base.get("nome_cantiere"):
+            precompilati["nome_cantiere"] = f"{base['nome_cantiere']} - {suffisso}"
+        self._handle_nuovo_cantiere(
+            tipo_preselezionato=tipo, precompilati=precompilati, progettazione_origine_id=origine_id
+        )
+
+    def _collega_progettazione(self):
+        """Per cantieri carotaggi/sorveglianza gia' esistenti: sceglie la Progettazione di cui mostrare gli elementi."""
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            return
+        try:
+            progettazioni = self.matrice_api.list_progettazioni(self.session.access_token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Progettazione", str(exc))
+            return
+        if not progettazioni:
+            QMessageBox.information(self.iface.mainWindow(), "Progettazione", "Non ci sono cantieri di Progettazione disponibili.")
+            return
+        nomi = [p["nome_cantiere"] for p in progettazioni]
+        nome, ok = QInputDialog.getItem(
+            self.iface.mainWindow(), "Collega progettazione",
+            "Progettazione di cui mostrare gli elementi previsti:", nomi, 0, False,
+        )
+        if not ok:
+            return
+        origine = progettazioni[nomi.index(nome)]["id"]
+        try:
+            riga = self.matrice_api.collega_progettazione(cantiere_id, origine, self.session.access_token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Progettazione", str(exc))
+            return
+        if riga is None:
+            self.iface.messageBar().pushWarning("Progettazione", "Collegamento non riuscito: serve il ruolo «referente» sul cantiere.")
+            return
+        self._progettazione_origine_id = origine
+        self._carica_riferimenti_progettazione(cantiere_id)
+        self._zoom_su_cantiere(cantiere_id)
+
+    def _riapri_progettazione(self):
+        cantiere_id = self.session.cantiere_corrente_id
+        if not cantiere_id:
+            return
+        try:
+            riga = self.matrice_api.set_stato_progettazione(cantiere_id, "in_corso", self.session.access_token)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Progettazione", str(exc))
+            return
+        if riga is None:
+            self.iface.messageBar().pushWarning(
+                "Progettazione", "Riapertura non riuscita: serve il ruolo «referente» sul cantiere."
+            )
+            return
+        self._stato_progettazione = "in_corso"
+        self._aggiorna_menu_progettazione()
+        self.iface.messageBar().pushSuccess("Progettazione", "Progettazione riaperta.")
+
+    def _zoom_su_cantiere(self, cantiere_id, localizzazione=None):
+        """
+        Ingrandisce la mappa su quanto il cantiere ha gia' (punto di
+        localizzazione, area disegnata, livelli con dati). Ritorna True se ha
+        potuto farlo. Mai bloccante.
+        """
+        if localizzazione is None:
+            try:
+                localizzazione = self.matrice_api.get_localizzazione_cantiere(cantiere_id, self.session.access_token)
+            except Exception:
+                localizzazione = None
+        layers_con_dati = []
+        for key in self.layer_manager.current_layers(cantiere_id):
+            try:
+                # Solo i livelli davvero in mappa e con almeno una riga.
+                if not self.layer_manager.is_layer_shown(cantiere_id, key):
+                    continue
+                layer = self.layer_manager.current_layers(cantiere_id)[key]
+                if layer.featureCount() > 0:
+                    layers_con_dati.append(layer)
+            except Exception:
+                continue
+        for layer in self.layer_manager.layers_riferimento(cantiere_id):
+            try:
+                if layer.featureCount() > 0:
+                    layers_con_dati.append(layer)
+            except Exception:
+                continue
+        estensione = estensione_cantiere_wgs84(layers_con_dati, localizzazione)
+        if estensione is None:
+            return False
+        return zoom_su_estensione_wgs84(self.iface.mapCanvas(), estensione)
+
+    def _assicura_vista_valida(self, cantiere_id):
+        """
+        Prima di attivare uno strumento "clicca per posizionare": se la vista
+        e' troppo ampia (es. mondo intero) la riporta sul cantiere; se non
+        e' possibile avvisa l'operatore. Ritorna True se si puo' procedere.
+        """
+        canvas = self.iface.mapCanvas()
+        if vista_canvas_valida(canvas):
+            return True
+        if self._zoom_su_cantiere(cantiere_id) and vista_canvas_valida(canvas):
+            return True
+        self._avviso_click_fuori_dominio()
+        return False
+
+    def _fine_posizionamento(self, creati, nome):
+        """Riepilogo a fine posizionamento continuo (Esc o tasto destro)."""
+        if creati:
+            self.iface.messageBar().pushSuccess(
+                "Progettazione", f"Posizionamento terminato: {creati} elementi ({nome}) salvati su Matrice."
+                if creati > 1 else f"Posizionamento terminato: 1 elemento ({nome}) salvato su Matrice."
+            )
+        else:
+            self.iface.messageBar().pushInfo("Progettazione", "Posizionamento annullato: nessun elemento creato.")
+
+    def _avviso_click_fuori_dominio(self):
+        self.iface.messageBar().pushWarning(
+            "Progettazione",
+            "La mappa e' troppo ingrandita sul mondo intero: ingrandisci sulla zona del cantiere "
+            "(rotella del mouse) e clicca di nuovo.",
+        )
 
     def _handle_active_layer_changed(self, layer):
         """
@@ -600,7 +969,18 @@ class MatricePlugin:
         # "US attive" sopra, applicato al menu delle viste rapide.
         chiave_attiva = self._chiave_layer_attivo(cantiere_id, layer)
         self.dock_widget.populate_quick_views(self.quick_view_manager.available_views(chiave_attiva))
-        self.progettazione_action.setEnabled(chiave_attiva in CHIAVI_LAYER_PROGETTAZIONE)
+        # NOTA (bug segnalato 2026-10-17): il bottone "Progettazione" NON si
+        # abilita piu' in base al layer attivo in QGIS. Quel meccanismo
+        # (uguale a "US attive" sopra) richiedeva che l'operatore cliccasse
+        # anche sul nome del layer nel pannello "Livelli" NATIVO di QGIS,
+        # oltre a spuntarlo nel pannello Matrice -- un passaggio in piu' non
+        # spiegato da nessuna parte, che lasciava il bottone grigio senza
+        # alcuna indicazione del perche'. Ogni singola voce del menu
+        # (Trincea/Saggio/UR/Carotaggio) verifica comunque da
+        # sola, al momento del click, che la tavola di un cantiere sia
+        # aperta (altrimenti avvisa l'operatore) -- quindi non serve
+        # replicare qui lo stesso controllo in anticipo: e' sufficiente che
+        # sia aperta la tavola, vedi handle_open_tavola/handle_logout.
 
     def _chiave_layer_attivo(self, cantiere_id, layer):
         """Chiave in LAYER_SOURCES del layer QGIS attivo, o None se non e' uno dei layer di Matrice."""
@@ -622,99 +1002,150 @@ class MatricePlugin:
         """
         cantiere_id = self.session.cantiere_corrente_id
         chiave = "trincea_progettazione" if tipo == "trincea" else "saggio_progettazione"
-        layer = self.layer_manager.current_layers(cantiere_id).get(chiave) if cantiere_id else None
-        if layer is None:
+        if not cantiere_id:
             QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
             return
+        # show_layer (non current_layers): se il livello e' ancora vuoto e non
+        # spuntato non e' in mappa, e il rettangolo creato resterebbe
+        # invisibile e fuori dalla sincronizzazione.
+        layer, era_gia_visibile = self.layer_manager.show_layer(cantiere_id, chiave)
+        if not era_gia_visibile:
+            self._watch_layer_sync(chiave, layer, cantiere_id)
 
         dialog = RettangoloProgettazioneDialog(tipo, self.iface.mainWindow())
         if dialog.exec_() != dialog.Accepted:
             return
         valori = dialog.valori()
-        larghezza_m = valori.pop("larghezza_m")
-        lunghezza_m = valori.pop("lunghezza_m")
+        # larghezza_m/lunghezza_m servono sia a costruire il rettangolo sia
+        # come colonne NOT NULL della tabella (bug 2026-10-17: prima venivano
+        # tolte dai valori e l'insert falliva): si leggono senza rimuoverle.
+        larghezza_m = valori["larghezza_m"]
+        lunghezza_m = valori["lunghezza_m"]
+        # Obbligatori sulla tabella e non ereditati dalla vista QGIS.
+        valori["cantiere_id"] = cantiere_id
+        valori["created_by"] = self.session.user_id
 
         def dopo_creazione(ok):
             if ok:
                 layer.triggerRepaint()
-                self.iface.messageBar().pushSuccess("Progettazione", f"{valori['nome']} creato: clicca per selezionarlo e ruotarlo se serve.")
             else:
                 self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
 
+        if not self._assicura_vista_valida(cantiere_id):
+            return
         strumento = PosizionaRettangoloMapTool(
-            self.iface.mapCanvas(), layer, larghezza_m, lunghezza_m, valori, dopo_creazione
+            self.iface.mapCanvas(), layer, larghezza_m, lunghezza_m, valori, dopo_creazione,
+            on_errore=self._avviso_click_fuori_dominio,
+            on_terminato=lambda n: self._fine_posizionamento(n, tipo),
         )
-        self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto dove posizionare il rettangolo.")
+        self.iface.messageBar().pushInfo(
+            "Progettazione",
+            f"Clicca sulla mappa per posizionare {'la trincea' if tipo == 'trincea' else 'il saggio'}; "
+            "ogni click ne aggiunge uno uguale. Tasto destro o Esc per finire.",
+        )
         self.iface.mapCanvas().setMapTool(strumento)
 
+    def _avvia_strumento_nativo(self, nome_oggetto, nome_iface, descrizione):
+        """
+        Avvia uno strumento di modifica nativo QGIS (Ruota/Sposta elementi)
+        sul layer attivo, mettendolo in modifica se serve.
+
+        QgisInterface NON espone actionRotateFeature (bug 2026-10-17:
+        AttributeError): lo strumento esiste solo come QAction della
+        finestra principale, cercata per nome oggetto. Per Sposta basta
+        iface.actionMoveFeature(), ma si usa lo stesso percorso per
+        uniformita' e per sopravvivere a differenze tra versioni di QGIS.
+        """
+        layer = self.iface.activeLayer()
+        if layer is None or not hasattr(layer, "startEditing"):
+            self.iface.messageBar().pushWarning(
+                "Progettazione", f"Per {descrizione} seleziona prima nel pannello Livelli il livello dell'elemento."
+            )
+            return
+        azione = None
+        if nome_iface and hasattr(self.iface, nome_iface):
+            azione = getattr(self.iface, nome_iface)()
+        if azione is None:
+            azione = self.iface.mainWindow().findChild(QAction, nome_oggetto)
+        if azione is None:
+            self.iface.messageBar().pushWarning(
+                "Progettazione",
+                f"Strumento «{descrizione}» non trovato in questa versione di QGIS: usalo dalla barra "
+                "«Digitalizzazione avanzata» (menu Visualizza > Barre degli strumenti).",
+            )
+            return
+        if not layer.isEditable():
+            layer.startEditing()
+        azione.trigger()
+        self.iface.messageBar().pushInfo(
+            "Progettazione", f"{descrizione.capitalize()}: clicca l'elemento sulla mappa, poi salva le modifiche del livello."
+        )
+
     def _ruota_elemento_progettazione(self):
-        """
-        Richiama lo strumento nativo QGIS "Ruota elementi" (stesso identico
-        strumento della toolbar di digitalizzazione), solo raggiungibile
-        anche da qui: niente reimplementazione, la rotazione scritta sui
-        vertici dal tool nativo resta quella che poi si ricalcola in
-        `angolo_rotazione_gradi` (vedi nota in rettangolo_progettazione.py).
-        """
-        azione_nativa = self.iface.actionRotateFeature()
-        if azione_nativa is not None:
-            azione_nativa.trigger()
+        """Strumento nativo QGIS "Ruota elementi" (vedi nota in rettangolo_progettazione.py sull'angolo)."""
+        self._avvia_strumento_nativo("mActionRotateFeature", None, "ruotare l'elemento")
 
-    def _apri_nuovo_ritrovamento(self):
+    def _sposta_elemento_progettazione(self):
+        """Strumento nativo QGIS "Sposta elementi"."""
+        self._avvia_strumento_nativo("mActionMoveFeature", "actionMoveFeature", "spostare l'elemento")
+
+    def _apri_nuovo_carotaggio(self):
         """
-        Apre il dialog "Nuovo rinvenimento" e, alla conferma, attiva lo
-        strumento "un click per posizionare" (core/ritrovamento_progettazione.py)
-        sul layer survey_ritrovamento.
+        Apre il dialog "Nuovo carotaggio" e, alla conferma, attiva lo stesso
+        strumento "un click per posizionare" usato per il rinvenimento
+        (PosizionaPuntoMapTool, core/ritrovamento_progettazione.py -- e'
+        generico, non specifico al rinvenimento nonostante il nome del
+        modulo). numero_carotaggio/lat/lng li calcola il trigger INSTEAD OF
+        INSERT di v_carotaggio_qgis (sezione dedicata della spec import
+        dati), qui si passano solo i campi compilabili sul campo.
 
-        `ur_id` e' obbligatorio su survey_ritrovamento (vincolo verificato in
-        produzione): la lista delle UR disponibili si legge dal layer
-        survey_ur gia' caricato (stesso cantiere), non serve una chiamata
-        REST in piu'. Se non c'e' ancora nessuna UR disegnata, niente
-        dialog: un rinvenimento non puo' nascere "libero".
-
-        Il layer survey_ritrovamento si prende via show_layer (non
-        current_layers come in _disegna_unita_ricognizione): potrebbe non
-        essere ancora stato mostrato in mappa (nessun rinvenimento esistente
-        per questo cantiere), show_layer lo crea/mostra vuoto e pronto per
-        addFeature, stesso schema di _apri_nuovo_rettangolo.
+        Il layer si prende via show_layer (non current_layers): un cantiere
+        senza ancora alcun carotaggio potrebbe non averlo mai mostrato in
+        mappa (sezione 4, passo 1 -- livelli senza dati non caricati in
+        automatico), show_layer lo crea/mostra vuoto e pronto per addFeature,
+        stesso schema di _apri_nuovo_rettangolo.
         """
         cantiere_id = self.session.cantiere_corrente_id
         if not cantiere_id:
-            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere.")
             return
-        layer, _ = self.layer_manager.show_layer(cantiere_id, "survey_ritrovamento")
-
-        layer_ur = self.layer_manager.current_layers(cantiere_id).get("survey_ur")
-        # f["id"] e' None per una UR disegnata ma non ancora salvata (layer
-        # in edit mode, vedi _disegna_unita_ricognizione): esclusa, altrimenti
-        # l'insert del rinvenimento fallirebbe sul vincolo ur_id NOT NULL con
-        # un errore generico.
-        ur_disponibili = (
-            [(f["id"], f["codice_ur"]) for f in layer_ur.getFeatures() if f["id"] is not None]
-            if layer_ur else []
-        )
-        if not ur_disponibili:
-            QMessageBox.warning(
-                self.iface.mainWindow(), "Progettazione",
-                "Disegna prima almeno una Unità di Ricognizione: ogni rinvenimento deve appartenere a una UR.",
-            )
+        if not self._progettazione_modificabile():
             return
+        # Layer proprio della Progettazione (tabella carotaggio_progettazione),
+        # separato dai carotaggi della "Lettura carotaggi".
+        layer, era_gia_visibile = self.layer_manager.show_layer(cantiere_id, "carotaggio_progettazione")
+        if not era_gia_visibile:
+            self._watch_layer_sync("carotaggio_progettazione", layer, cantiere_id)
 
-        dialog = RitrovamentoDialog(ur_disponibili, self.iface.mainWindow())
+        dialog = CarotaggioProgettazioneDialog(self.iface.mainWindow())
         if dialog.exec_() != dialog.Accepted:
             return
         attributi = dialog.valori()
+        # cantiere_id e' obbligatorio: il trigger INSTEAD OF INSERT di
+        # v_carotaggio_qgis lo usa sia per la riga vera e propria sia per
+        # calcolare il prossimo numero_carotaggio (max+1 filtrato su questo
+        # cantiere) -- senza, l'insert fallirebbe sul vincolo NOT NULL
+        # (obbligatorio come cantiere_id per trincea/saggio). Il codice
+        # (CAR-01, CAR-02...) lo assegna il database.
         attributi["cantiere_id"] = cantiere_id
         attributi["created_by"] = self.session.user_id
 
         def dopo_creazione(ok):
             if ok:
                 layer.triggerRepaint()
-                self.iface.messageBar().pushSuccess("Progettazione", "Rinvenimento creato.")
             else:
                 self.iface.messageBar().pushWarning("Progettazione", "Creazione non riuscita.")
 
-        strumento = PosizionaPuntoMapTool(self.iface.mapCanvas(), layer, attributi, dopo_creazione)
-        self.iface.messageBar().pushInfo("Progettazione", "Clicca sulla mappa nel punto del rinvenimento.")
+        if not self._assicura_vista_valida(cantiere_id):
+            return
+        strumento = PosizionaPuntoMapTool(
+            self.iface.mapCanvas(), layer, attributi, dopo_creazione, on_errore=self._avviso_click_fuori_dominio,
+            on_terminato=lambda n: self._fine_posizionamento(n, "carotaggio di progetto"),
+        )
+        self.iface.messageBar().pushInfo(
+            "Progettazione",
+            "Clicca sulla mappa per posizionare il carotaggio; ogni click ne aggiunge uno uguale. Tasto destro o Esc per finire.",
+        )
         self.iface.mapCanvas().setMapTool(strumento)
 
     def _disegna_unita_ricognizione(self):
@@ -729,6 +1160,13 @@ class MatricePlugin:
             QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Apri prima la tavola di un cantiere di Progettazione.")
             return
         layer, _ = self.layer_manager.show_layer(cantiere_id, "survey_ur")
+        # Il form nativo QGIS non conosce il cantiere: senza un valore
+        # predefinito, cantiere_id (NOT NULL) arriverebbe vuoto e il
+        # salvataggio fallirebbe. created_by e' facoltativo ma utile.
+        for campo, valore in (("cantiere_id", cantiere_id), ("created_by", self.session.user_id)):
+            indice = layer.fields().indexOf(campo)
+            if indice >= 0 and valore:
+                layer.setDefaultValueDefinition(indice, QgsDefaultValue(f"'{valore}'"))
         self.iface.setActiveLayer(layer)
         if not layer.isEditable():
             layer.startEditing()

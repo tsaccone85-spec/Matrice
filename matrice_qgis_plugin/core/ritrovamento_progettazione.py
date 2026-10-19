@@ -7,8 +7,10 @@ INSTEAD OF INSERT (migrazione 0070) che la traduce in lat/lng sulla
 tabella reale.
 """
 
-from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsFeature, QgsGeometry, QgsProject
+from qgis.core import QgsFeature, QgsGeometry
 from qgis.gui import QgsMapTool
+
+from .vista_cantiere import punto_canvas_in_wgs84
 
 
 def crea_feature_ritrovamento(layer, punto_wgs84, attributi):
@@ -29,27 +31,51 @@ def crea_feature_ritrovamento(layer, punto_wgs84, attributi):
 
 
 class PosizionaPuntoMapTool(QgsMapTool):
-    def __init__(self, canvas, layer, attributi, on_creato, on_annullato=None):
+    """
+    Strumento "clicca per posizionare" CONTINUO per punti (rinvenimento,
+    carotaggio): ogni click crea un punto con gli stessi attributi sul layer
+    scelto e lo strumento resta attivo per posizionarne altri. Si termina con
+    Esc o tasto destro. Numerazioni progressive (numero_carotaggio,
+    numero_progressivo) le assegna il trigger del database a ogni inserimento.
+    """
+
+    def __init__(self, canvas, layer, attributi, on_creato, on_annullato=None, on_errore=None, on_terminato=None):
         super().__init__(canvas)
         self.canvas = canvas
         self.layer = layer
         self.attributi = attributi
         self.on_creato = on_creato
         self.on_annullato = on_annullato
+        self.on_errore = on_errore
+        self.on_terminato = on_terminato
+        self.creati = 0
+
+    def _termina(self):
+        self.canvas.unsetMapTool(self)
+        if self.on_terminato:
+            self.on_terminato(self.creati)
+        elif self.on_annullato:
+            self.on_annullato()
 
     def canvasReleaseEvent(self, event):
+        from qgis.PyQt.QtCore import Qt
+        if event.button() == Qt.RightButton:
+            self._termina()
+            return
         punto_canvas = self.toMapCoordinates(event.pos())
-        crs_canvas = self.canvas.mapSettings().destinationCrs()
-        crs_wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
-        trasforma = QgsCoordinateTransform(crs_canvas, crs_wgs84, QgsProject.instance())
-        punto_wgs84 = trasforma.transform(punto_canvas)
-        ok = crea_feature_ritrovamento(self.layer, punto_wgs84, self.attributi)
-        self.canvas.unsetMapTool(self)
+        punto_wgs84 = punto_canvas_in_wgs84(self.canvas, punto_canvas)
+        if punto_wgs84 is None:
+            # Punto fuori dal dominio della proiezione (vista troppo ampia):
+            # lo strumento resta attivo per riprovare dopo aver ingrandito.
+            if self.on_errore:
+                self.on_errore()
+            return
+        ok = crea_feature_ritrovamento(self.layer, punto_wgs84, dict(self.attributi))
+        if ok:
+            self.creati += 1
         self.on_creato(ok)
 
     def keyPressEvent(self, event):
         from qgis.PyQt.QtCore import Qt
         if event.key() == Qt.Key_Escape:
-            self.canvas.unsetMapTool(self)
-            if self.on_annullato:
-                self.on_annullato()
+            self._termina()

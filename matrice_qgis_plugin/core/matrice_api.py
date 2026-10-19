@@ -18,6 +18,28 @@ per poter editare una geometria in mappa.
 """
 
 
+# Valori ammessi da cantiere.tipo_intervento (check constraint su Supabase)
+# con l'etichetta mostrata nel menu a tendina "Nuovo cantiere". L'ordine qui
+# e' l'ordine di visualizzazione.
+TIPI_INTERVENTO = [
+    ("scavo", "Scavo"),
+    ("sorveglianza", "Sorveglianza archeologica"),
+    ("vpa", "Verifica preventiva dell'interesse archeologico (VPA)"),
+    ("carotaggi", "Carotaggi"),
+    ("progettazione", "Progettazione archeologica"),
+    ("museo", "Museo"),
+]
+
+# Tipi di lavoro gated da una funzione specifica in funzione_accesso_utente
+# (stessa tabella/logica usata per le altre funzioni a pagamento, es.
+# relazione_ia): un tipo assente da questa mappa (scavo, carotaggi,
+# progettazione, museo) e' una funzionalita' di base, sempre proponibile.
+FUNZIONE_RICHIESTA_PER_TIPO_INTERVENTO = {
+    "sorveglianza": "sorveglianza_trincea",
+    "vpa": "vpa_gna",
+}
+
+
 class MatriceApi:
     """
     Riceve il SessionManager (non un client gia' pronto) e richiede il
@@ -37,19 +59,20 @@ class MatriceApi:
     def list_cantieri_abilitati(self, access_token):
         """
         Cantieri a cui l'utente loggato ha accesso. La riga viene restituita
-        solo se la Row Level Security su cantiere_accesso la consente per
-        questo utente -- non serve rifiltrare lato plugin.
+        solo se la Row Level Security su `cantiere` (has_cantiere_access) la
+        consente per questo utente -- non serve rifiltrare lato plugin.
+
+        Si legge direttamente `cantiere`, non piu' un reverse-join da
+        `cantiere_accesso` (bug corretto: cosi' facendo, un cantiere senza
+        NESSUNA riga in cantiere_accesso restava invisibile anche per un
+        utente "referente", che per regola vede automaticamente tutti i
+        cantieri della propria azienda -- has_cantiere_access lo permette,
+        ma non c'era alcuna riga da cui farlo risalire con quella query).
         """
         rows = self.rest.select(
-            "cantiere_accesso",
-            access_token,
-            params={"select": "cantiere_id,cantiere:cantiere_id(nome_cantiere)"},
+            "cantiere", access_token, params={"select": "id,nome_cantiere"},
         )
-        cantieri = [
-            {"id": row["cantiere_id"], "nome_cantiere": row["cantiere"]["nome_cantiere"]}
-            for row in (rows or [])
-            if row.get("cantiere")
-        ]
+        cantieri = [{"id": row["id"], "nome_cantiere": row["nome_cantiere"]} for row in (rows or [])]
         cantieri.sort(key=lambda c: (c["nome_cantiere"] or "").lower())
         return cantieri
 
@@ -77,6 +100,26 @@ class MatriceApi:
         """id (SISTEMI_RIFERIMENTO) del sistema di riferimento personale dell'utente loggato."""
         rows = self.rest.select("utente", access_token, params={"id": f"eq.{self.session.user_id}", "select": "sistema_riferimento_id"})
         return rows[0]["sistema_riferimento_id"] if rows else 1
+
+    def tipi_intervento_consentiti(self, access_token):
+        """
+        Sottoinsieme di TIPI_INTERVENTO che l'utente loggato puo' scegliere
+        nel dialog "Nuovo cantiere": i tipi di base (vedi
+        FUNZIONE_RICHIESTA_PER_TIPO_INTERVENTO) sono sempre proposti, gli
+        altri solo se all'utente e' stata concessa la funzione
+        corrispondente -- stessa tabella/meccanismo delle altre funzioni a
+        pagamento (es. relazione_ia), non una logica di permessi nuova.
+        """
+        rows = self.rest.select(
+            "funzione_accesso_utente", access_token,
+            params={"utente_id": f"eq.{self.session.user_id}", "select": "funzione"},
+        )
+        funzioni_concesse = {row["funzione"] for row in (rows or [])}
+        return [
+            (valore, etichetta)
+            for valore, etichetta in TIPI_INTERVENTO
+            if FUNZIONE_RICHIESTA_PER_TIPO_INTERVENTO.get(valore) in (None, *funzioni_concesse)
+        ]
 
     def crea_cantiere(self, campi, access_token):
         """
@@ -107,6 +150,54 @@ class MatriceApi:
             params={"id": f"eq.{cantiere_id}", "select": "lat,lng,area_geom_wkt,area_buffer_geom_wkt"},
         )
         return rows[0] if rows else None
+
+    def get_stato_progettazione(self, cantiere_id, access_token):
+        """
+        (tipo_intervento, stato_progettazione, progettazione_origine_id).
+        stato_progettazione e' 'in_corso' / 'sospeso' / 'completato' oppure
+        None (mai impostato: la progettazione si considera aperta).
+        progettazione_origine_id e' valorizzato nei cantieri a valle
+        (carotaggi / sorveglianza) creati o collegati a una Progettazione.
+        """
+        rows = self.rest.select(
+            "cantiere", access_token,
+            params={
+                "id": f"eq.{cantiere_id}",
+                "select": "tipo_intervento,stato_progettazione,progettazione_origine_id",
+            },
+        )
+        if not rows:
+            return None, None, None
+        riga = rows[0]
+        return riga.get("tipo_intervento"), riga.get("stato_progettazione"), riga.get("progettazione_origine_id")
+
+    def nome_cantiere(self, cantiere_id, access_token):
+        rows = self.rest.select(
+            "cantiere", access_token, params={"id": f"eq.{cantiere_id}", "select": "nome_cantiere"}
+        )
+        return rows[0]["nome_cantiere"] if rows else None
+
+    def list_progettazioni(self, access_token):
+        """Cantieri di Progettazione visibili all'utente: [{"id", "nome_cantiere"}, ...]."""
+        rows = self.rest.select(
+            "cantiere", access_token,
+            params={"tipo_intervento": "eq.progettazione", "select": "id,nome_cantiere"},
+        )
+        return sorted(rows or [], key=lambda r: (r["nome_cantiere"] or "").lower())
+
+    def collega_progettazione(self, cantiere_id, origine_id, access_token):
+        """Imposta la Progettazione di riferimento di un cantiere carotaggi/sorveglianza (serve ruolo referente)."""
+        return self.rest.update(
+            "cantiere", "id", cantiere_id, {"progettazione_origine_id": origine_id}, access_token
+        )
+
+    def set_stato_progettazione(self, cantiere_id, stato, access_token):
+        """
+        Chiude ('completato') o riapre ('in_corso') la progettazione. La RLS di
+        scrittura su `cantiere` richiede il ruolo "referente": senza, l'errore
+        di permessi e' atteso, non un bug del plugin.
+        """
+        return self.rest.update("cantiere", "id", cantiere_id, {"stato_progettazione": stato}, access_token)
 
     def update_area_intervento(self, cantiere_id, wkt, access_token):
         """

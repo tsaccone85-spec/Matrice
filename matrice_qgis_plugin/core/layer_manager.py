@@ -15,6 +15,23 @@ in scritture su lat/lng tramite trigger lato database.
 """
 
 from qgis.core import Qgis, QgsEditorWidgetSetup, QgsProject, QgsVectorLayer
+from qgis.PyQt import sip
+
+
+def _layer_presente(layer):
+    """
+    True se `layer` esiste ancora nel progetto QGIS corrente.
+
+    Un operatore puo' rimuovere un layer a mano dal pannello Livelli di
+    QGIS (non solo togliendo la spunta dal pannello Matrice): l'oggetto
+    C++ sottostante viene distrutto, ma il wrapper Python resta in
+    _layers_by_cantiere finche' non si richiama questa funzione. Senza
+    `sip.isdeleted()`, chiamare layer.id() su un wrapper il cui oggetto
+    C++ e' gia' stato eliminato lancia RuntimeError invece di poter
+    essere trattato come "non piu' presente" (stesso bug corretto in
+    core/localizzazione_manager.py).
+    """
+    return layer is not None and not sip.isdeleted(layer) and QgsProject.instance().mapLayer(layer.id()) is not None
 
 # view/tabella -> colonna geometria, chiave primaria, nome visualizzato,
 # tipo WKB e SRID (sezione 4, passo 1).
@@ -157,6 +174,19 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "\"codice_ur\"",
     },
+    # Carotaggi PREVISTI dalla Progettazione: tabella propria
+    # (carotaggio_progettazione), distinta da "carotaggio" che appartiene al
+    # flusso "Lettura carotaggi" e non va mai mescolata con questa.
+    "carotaggio_progettazione": {
+        "source": "v_carotaggio_progettazione_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - Carotaggi",
+        "wkb_type": Qgis.WkbType.Point,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by"),
+        "espressione_display": "\"nome\"",
+    },
     "survey_ritrovamento": {
         "source": "v_survey_ritrovamento_qgis",
         "geometry_column": "geom",
@@ -170,11 +200,31 @@ LAYER_SOURCES = {
 }
 
 
+# Livelli del flusso "Progettazione Archeologica": nel pannello Livelli di QGIS
+# stanno sotto un unico gruppo, non sparsi alla radice. Il layer "Carotaggi"
+# della Lettura carotaggi ("carotaggio") resta fuori: e' un altro flusso. I
+# carotaggi di progetto hanno un layer a parte ("carotaggio_progettazione").
+GRUPPO_PROGETTAZIONE = "Progettazione"
+# Livelli di riferimento (sola lettura) che un cantiere a valle mostra dalla
+# Progettazione di origine: carotaggi per la Lettura carotaggi, trincee e saggi
+# per l'Assistenza in corso d'opera (sorveglianza).
+GRUPPO_RIFERIMENTO = "Da progettazione (sola lettura)"
+RIFERIMENTI_PER_TIPO_INTERVENTO = {
+    "carotaggi": ("carotaggio_progettazione",),
+    "sorveglianza": ("trincea_progettazione", "saggio_progettazione"),
+}
+CHIAVI_GRUPPO_PROGETTAZIONE = (
+    "progettazione_cropmark", "progettazione_vincolo", "trincea_progettazione",
+    "saggio_progettazione", "survey_ur", "survey_ritrovamento", "carotaggio_progettazione",
+)
+
+
 class LayerManager:
     def __init__(self, connection):
         self.connection = connection
         self._layers_by_cantiere = {}
         self._nome_by_cantiere = {}
+        self._riferimenti_by_cantiere = {}  # layer di sola lettura dalla Progettazione di origine
 
     def nome_cantiere(self, cantiere_id):
         """Nome del cantiere passato all'ultimo load_cantiere() per questo id, o None se non noto."""
@@ -258,13 +308,53 @@ class LayerManager:
                 continue
             layers[key] = layer
             if layer.featureCount() > 0:
-                QgsProject.instance().addMapLayer(layer)
+                self._aggiungi_in_mappa(layer, key)
                 has_data[key] = True
             else:
                 has_data[key] = False
 
         self._layers_by_cantiere[cantiere_id] = layers
         return layers, has_data
+
+    def _aggiungi_in_mappa(self, layer, key):
+        """Aggiunge `layer` al progetto, nel gruppo "Progettazione" se ne fa parte."""
+        if key not in CHIAVI_GRUPPO_PROGETTAZIONE:
+            QgsProject.instance().addMapLayer(layer)
+            return
+        radice = QgsProject.instance().layerTreeRoot()
+        gruppo = radice.findGroup(GRUPPO_PROGETTAZIONE) or radice.addGroup(GRUPPO_PROGETTAZIONE)
+        QgsProject.instance().addMapLayer(layer, False)
+        gruppo.addLayer(layer)
+
+    def carica_riferimento(self, cantiere_id, origine_id, chiavi):
+        """
+        Mostra in mappa, SOLA LETTURA, i livelli `chiavi` della Progettazione
+        `origine_id` dentro il cantiere a valle `cantiere_id` (carotaggi /
+        sorveglianza): carotaggi previsti, trincee e saggi di progetto. Non si
+        aggancia nessuna sincronizzazione: sono dati di riferimento, non si
+        modificano da qui. Ritorna la lista dei layer aggiunti.
+        """
+        self.rimuovi_riferimento(cantiere_id)
+        aggiunti = []
+        for key in chiavi:
+            layer = self._build_layer(origine_id, key)
+            layer.setName(f"{LAYER_SOURCES[key]['display_name']} (da progetto)")
+            layer.setReadOnly(True)
+            radice = QgsProject.instance().layerTreeRoot()
+            gruppo = radice.findGroup(GRUPPO_RIFERIMENTO) or radice.addGroup(GRUPPO_RIFERIMENTO)
+            QgsProject.instance().addMapLayer(layer, False)
+            gruppo.addLayer(layer)
+            aggiunti.append(layer)
+        self._riferimenti_by_cantiere[cantiere_id] = aggiunti
+        return aggiunti
+
+    def layers_riferimento(self, cantiere_id):
+        return [l for l in self._riferimenti_by_cantiere.get(cantiere_id, []) if _layer_presente(l)]
+
+    def rimuovi_riferimento(self, cantiere_id):
+        for layer in self._riferimenti_by_cantiere.pop(cantiere_id, []):
+            if _layer_presente(layer):
+                QgsProject.instance().removeMapLayer(layer.id())
 
     def current_layers(self, cantiere_id):
         return self._layers_by_cantiere.get(cantiere_id, {})
@@ -279,13 +369,13 @@ class LayerManager:
             return None
         for cantiere_id, layers in self._layers_by_cantiere.items():
             rilievo = layers.get("rilievo_geometria")
-            if rilievo is not None and rilievo.id() == layer.id():
+            if _layer_presente(rilievo) and rilievo.id() == layer.id():
                 return cantiere_id
         return None
 
     def is_layer_shown(self, cantiere_id, key):
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        return layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None
+        return _layer_presente(layer)
 
     def show_layer(self, cantiere_id, key):
         """
@@ -298,11 +388,11 @@ class LayerManager:
         agganciato alla sincronizzazione delle modifiche).
         """
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        if layer is not None and QgsProject.instance().mapLayer(layer.id()) is not None:
+        if _layer_presente(layer):
             return layer, True  # gia' visibile, nessuna nuova azione da fare
 
         layer = self._build_layer(cantiere_id, key)
-        QgsProject.instance().addMapLayer(layer)
+        self._aggiungi_in_mappa(layer, key)
         self._layers_by_cantiere.setdefault(cantiere_id, {})[key] = layer
         return layer, False
 
@@ -314,17 +404,16 @@ class LayerManager:
         spunta nel pannello, se per qualche motivo erano comunque finiti in
         mappa.
         """
+        self.rimuovi_riferimento(cantiere_id)
         layers = self._layers_by_cantiere.pop(cantiere_id, {})
         for layer in layers.values():
-            if QgsProject.instance().mapLayer(layer.id()) is not None:
+            if _layer_presente(layer):
                 QgsProject.instance().removeMapLayer(layer.id())
 
     def hide_layer(self, cantiere_id, key):
         """Rimuove dalla mappa il livello `key` del cantiere (spunta tolta)."""
         layer = self._layers_by_cantiere.get(cantiere_id, {}).get(key)
-        if layer is None:
-            return
-        if QgsProject.instance().mapLayer(layer.id()) is not None:
+        if _layer_presente(layer):
             QgsProject.instance().removeMapLayer(layer.id())
         self._layers_by_cantiere.get(cantiere_id, {}).pop(key, None)
 
