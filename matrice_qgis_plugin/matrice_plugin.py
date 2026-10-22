@@ -714,7 +714,7 @@ class MatricePlugin:
         def dopo_creazione(ok):
             if ok:
                 layer.triggerRepaint()
-                self.iface.messageBar().pushSuccess("Progettazione", f"{valori['nome']} creato: clicca per selezionarlo e ruotarlo se serve.")
+                self.iface.messageBar().pushSuccess("Progettazione", f"{valori.get('nome') or ('Trincea' if tipo == 'trincea' else 'Saggio')} creato: clicca per selezionarlo e ruotarlo se serve.")
             else:
                 self.iface.messageBar().pushWarning("Progettazione", self._messaggio_creazione_fallita())
 

@@ -47,7 +47,9 @@ class RettangoloProgettazioneDialog(QDialog):
         layout.addLayout(form)
 
         self.nomeInput = QLineEdit()
-        form.addRow("Nome", self.nomeInput)
+        prefisso = "TR-01, TR-02…" if tipo == "trincea" else "SAG-01, SAG-02…"
+        self.nomeInput.setPlaceholderText(f"automatico ({prefisso})")
+        form.addRow("Nome (opzionale)", self.nomeInput)
 
         self.larghezzaInput = QDoubleSpinBox()
         self.larghezzaInput.setRange(0.01, 999)
@@ -102,12 +104,16 @@ class RettangoloProgettazioneDialog(QDialog):
     def valori(self):
         """Dict pronto per `attributi` di crea_feature_rettangolo, piu' larghezza/lunghezza a parte."""
         base = {
-            "nome": self.nomeInput.text().strip() or ("Trincea" if self.tipo == "trincea" else "Saggio"),
             "larghezza_m": self.larghezzaInput.value(),
             "lunghezza_m": self.lunghezzaInput.value(),
             "profondita_m": self.profonditaInput.value() or None,
             "angolo_rotazione_gradi": 0,
         }
+        # Nome vuoto = non si scrive: lo assegna il database (TR-01 / SAG-01...,
+        # trigger *_nome_auto, migrazione 0092), come per i carotaggi.
+        nome = self.nomeInput.text().strip()
+        if nome:
+            base["nome"] = nome
         if self.tipo == "trincea":
             base["metodo"] = self.metodoInput.currentData()
             base["data_esecuzione"] = self.dataEsecuzioneInput.date().toString("yyyy-MM-dd")
