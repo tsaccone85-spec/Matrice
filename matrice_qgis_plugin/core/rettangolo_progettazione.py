@@ -77,7 +77,12 @@ def crea_feature_rettangolo(layer, centro_wgs84, larghezza_m, lunghezza_m, attri
     geometria = crea_geometria_rettangolo(centro_wgs84, larghezza_m, lunghezza_m, angolo_gradi=0)
     feature = QgsFeature(layer.fields())
     feature.setGeometry(geometria)
-    for campo, valore in attributi.items():
+    # Le dimensioni servono alla geometria ma sono anche colonne not null
+    # (check > 0) della tabella: vanno scritte, non solo usate per il disegno.
+    dati = dict(attributi)
+    dati["larghezza_m"] = larghezza_m
+    dati["lunghezza_m"] = lunghezza_m
+    for campo, valore in dati.items():
         indice = layer.fields().indexOf(campo)
         if indice >= 0:
             feature.setAttribute(indice, valore)
