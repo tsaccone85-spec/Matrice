@@ -14,7 +14,7 @@ espongono un campo `geom` calcolato e traducono le modifiche di posizione
 in scritture su lat/lng tramite trigger lato database.
 """
 
-from qgis.core import Qgis, QgsDefaultValue, QgsEditorWidgetSetup, QgsProject, QgsVectorLayer
+from qgis.core import Qgis, QgsDefaultValue, QgsEditorWidgetSetup, QgsFieldConstraints, QgsProject, QgsVectorLayer
 from qgis.PyQt import sip
 
 
@@ -181,6 +181,9 @@ LAYER_SOURCES = {
             "note", "created_at",
         ),
         "campi_sola_lettura": ("area_mq",),
+        # Le viste non espongono il not null della tabella: senza vincolo nel
+        # form QGIS salva anche con codice_ur vuoto e il DB rifiuta la riga.
+        "campi_obbligatori": ("codice_ur",),
         "espressione_display": "\"codice_ur\"",
     },
     # Carotaggi PREVISTI dalla Progettazione: tabella propria
@@ -323,6 +326,25 @@ class LayerManager:
                 if indice != -1:
                     form_config.setReadOnly(indice, True)
             layer.setEditFormConfig(form_config)
+
+        for nome_campo in opts.get("campi_obbligatori", ()):
+            indice = layer.fields().indexFromName(nome_campo)
+            if indice != -1:
+                layer.setFieldConstraint(
+                    indice,
+                    QgsFieldConstraints.ConstraintNotNull,
+                    QgsFieldConstraints.ConstraintStrengthHard,
+                )
+                layer.setFieldConstraint(
+                    indice,
+                    QgsFieldConstraints.ConstraintExpression,
+                    QgsFieldConstraints.ConstraintStrengthHard,
+                )
+                layer.setConstraintExpression(
+                    indice,
+                    f'length(trim("{nome_campo}")) > 0',
+                    "Il campo è obbligatorio.",
+                )
 
         espressione_display = opts.get("espressione_display")
         if espressione_display:
