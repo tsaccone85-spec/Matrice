@@ -87,6 +87,10 @@ class SyncHandler:
             feature = layer.getFeature(fid)
             id_record = feature[key_field] if key_field in feature.fields().names() else fid
             for field_index, new_value in changes.items():
+                # QgsUnsetAttributeValue: campo non toccato (QGIS >= 3.28 lo
+                # passa nelle modifiche multiple), psycopg2 non lo sa adattare.
+                if type(new_value).__name__ == "QgsUnsetAttributeValue":
+                    continue
                 field_name = layer.fields().at(field_index).name()
                 # I campi "di vista" (numero_us, definizione, fase, periodo,
                 # sepoltura_id, numero_tomba) sono di sola lettura: arrivano
