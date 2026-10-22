@@ -12,6 +12,7 @@ il dialog si chiude.
 
 from qgis.PyQt.QtCore import QDate
 from qgis.PyQt.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QDialog,
@@ -94,7 +95,10 @@ class RettangoloProgettazioneDialog(QDialog):
 
             self.dataChiusuraInput = QDateEdit(QDate.currentDate())
             self.dataChiusuraInput.setCalendarPopup(True)
-            form.addRow("Data chiusura (opzionale)", self.dataChiusuraInput)
+            self.dataChiusuraInput.setEnabled(False)
+            self.chiusuraCheck = QCheckBox("Imposta data di chiusura")
+            self.chiusuraCheck.toggled.connect(self.dataChiusuraInput.setEnabled)
+            form.addRow(self.chiusuraCheck, self.dataChiusuraInput)
 
         pulsanti = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         pulsanti.accepted.connect(self.accept)
@@ -121,5 +125,7 @@ class RettangoloProgettazioneDialog(QDialog):
             base["stato"] = self.statoInput.currentData()
             base["esito"] = self.esitoInput.currentData()
             base["data_apertura"] = self.dataAperturaInput.date().toString("yyyy-MM-dd")
-            base["data_chiusura"] = self.dataChiusuraInput.date().toString("yyyy-MM-dd")
+            base["data_chiusura"] = (
+                self.dataChiusuraInput.date().toString("yyyy-MM-dd") if self.chiusuraCheck.isChecked() else None
+            )
         return base
