@@ -82,7 +82,7 @@
   </LayoutItem>
   <GuideCollection visible="1"/>
  </PageCollection>
- <LayoutItem marginX="0" referencePoint="0" excludeFromExports="0" labelText="Localizzazione area di cantiere&#xa;Scala 1:200" halign="1" background="true" marginY="0" zValue="4" valign="32" id="" itemRotation="0" blendMode="0" positionLock="true" outlineWidthM="0.3,mm" htmlState="0" position="6.95158,6.48493,mm" groupUuid="" type="65641" visibility="1" size="47.625,8.94773,mm" frameJoinStyle="miter" frame="false" templateUuid="{d827fa76-86d1-4407-945a-44b9b6f75096}" positionOnPage="6.95158,6.48493,mm" opacity="1" uuid="{d827fa76-86d1-4407-945a-44b9b6f75096}">
+ <LayoutItem marginX="0" referencePoint="0" excludeFromExports="0" labelText="Localizzazione aree&#xa;Scala 1:200" halign="1" background="true" marginY="0" zValue="4" valign="32" id="" itemRotation="0" blendMode="0" positionLock="true" outlineWidthM="0.3,mm" htmlState="0" position="6.95158,6.48493,mm" groupUuid="" type="65641" visibility="1" size="47.625,8.94773,mm" frameJoinStyle="miter" frame="false" templateUuid="{d827fa76-86d1-4407-945a-44b9b6f75096}" positionOnPage="6.95158,6.48493,mm" opacity="1" uuid="{d827fa76-86d1-4407-945a-44b9b6f75096}">
   <FrameColor red="0" green="0" alpha="255" blue="0"/>
   <BackgroundColor red="255" green="255" alpha="255" blue="255"/>
   <LayoutObject>

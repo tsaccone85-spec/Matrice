@@ -619,13 +619,13 @@ class MatricePlugin:
             (key, opts["display_name"], has_data[key], _GRUPPO_LIVELLI.get(key))
             for key, opts in LAYER_SOURCES.items()
         ]
-        # "Localizzazione di cantiere" e "Area di cantiere" non sono layer
+        # "Localizzazione di cantiere" e "Aree" non sono layer
         # PostGIS come gli altri (vedi core/localizzazione_manager.py): due
         # voci distinte, ciascuna spuntata solo se il relativo dato era gia'
         # presente su Matrice all'apertura (coerente con ha_punto/ha_area
         # appena calcolati, che hanno gia' deciso se crearli in mappa).
         layer_states.append(("localizzazione_cantiere", "Localizzazione di cantiere", ha_punto, None))
-        layer_states.append(("area_intervento", "Area di cantiere", ha_area, None))
+        layer_states.append(("area_intervento", "Aree", ha_area, None))
         self.dock_widget.populate_layer_toggles(cantiere_id, layer_states)
 
         fasi_rows = self.matrice_api.list_fasi(cantiere_id, self.session.access_token)
@@ -878,7 +878,7 @@ class MatricePlugin:
 
     def _crea_buffer_area(self):
         """
-        Genera un buffer attorno all'area di cantiere gia' caricata
+        Genera un buffer attorno alle aree gia' caricate
         (cantiere.area_geom_wkt) e lo salva sul layer buffer_progettazione
         -- distanza chiesta all'operatore ad ogni generazione, non fissa sul
         cantiere. Le UR si disegnano su questo buffer (guida visiva, nessun
@@ -895,7 +895,7 @@ class MatricePlugin:
             return
         area_wkt = localizzazione.get("area_geom_wkt") if localizzazione else None
         if not area_wkt:
-            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Carica prima l'area di cantiere (Mappa di cantiere) prima di generare il buffer.")
+            QMessageBox.warning(self.iface.mainWindow(), "Progettazione", "Carica prima le aree (Mappa di cantiere) prima di generare il buffer.")
             return
         dialog = BufferAreaDialog(self.iface.mainWindow())
         if dialog.exec_() != dialog.Accepted:
@@ -962,7 +962,7 @@ class MatricePlugin:
         area_non_salvata = self.localizzazione_manager.remove_cantiere(cantiere_id)
         if area_non_salvata:
             self._show_warning(
-                "L'area di cantiere disegnata per il cantiere precedente non era stata salvata su Matrice: "
+                "L'area disegnata per il cantiere precedente non era stata salvata su Matrice: "
                 "e' stata scartata passando al nuovo cantiere."
             )
 
@@ -988,7 +988,7 @@ class MatricePlugin:
             self._show_warning(str(exc))
 
     def _apply_area_style(self, area_layer):
-        """Stile fornito dall'operatore per "Area di cantiere (disegno)" (sezione 7), uguale per tutti."""
+        """Stile fornito dall'operatore per "Aree (disegno)" (sezione 7), uguale per tutti."""
         area_qml_path = os.path.join(PLUGIN_DIR, "config", "styles", "Area_di_cantiere.qml")
         try:
             self.style_manager.load_qml(
@@ -1064,7 +1064,7 @@ class MatricePlugin:
 
     def _handle_toggle_area_intervento(self, cantiere_id, checked):
         """
-        "Area di cantiere" non e' un layer PostGIS: non va mai distrutto per
+        "Aree" non e' un layer PostGIS: non va mai distrutto per
         nasconderlo (si perderebbe un'eventuale area disegnata ma non
         ancora salvata, vedi core/localizzazione_manager.py) -- la spunta
         agisce solo sulla visibilita' nel pannello Livelli.
@@ -1225,7 +1225,7 @@ class MatricePlugin:
         wkt = self.localizzazione_manager.wkt_corrente(cantiere_id)
         if wkt is None:
             self._show_warning(
-                'Nessuna area disegnata: attivare l\'editing sul layer "Area di cantiere (disegno)" '
+                'Nessuna area disegnata: attivare l\'editing sul layer "Aree (disegno)" '
                 "e disegnare un poligono prima di salvare."
             )
             return
@@ -1257,9 +1257,9 @@ class MatricePlugin:
     def _handle_importa_area_da_file(self):
         """
         Azione toolbar "Importa area da file…" (sezione 4): alternativa al
-        disegno a mano del poligono "Area di cantiere" -- legge la prima
+        disegno a mano del poligono "Aree" -- legge la prima
         geometria di uno shapefile/GeoPackage/KML e la salva su Matrice,
-        poi ricarica il layer "Area di cantiere (disegno)" in mappa per
+        poi ricarica il layer "Aree (disegno)" in mappa per
         mostrare subito il poligono importato (stesso stile applicato dopo
         un disegno a mano o all'apertura tavola, vedi _apply_area_style).
         """
@@ -1270,7 +1270,7 @@ class MatricePlugin:
 
         path, _ = QFileDialog.getOpenFileName(
             self.iface.mainWindow(),
-            "Importa area di cantiere",
+            "Importa aree",
             "",
             "Vettoriali (*.shp *.gpkg *.kml)",
         )

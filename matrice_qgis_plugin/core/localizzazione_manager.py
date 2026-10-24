@@ -11,7 +11,7 @@ ciascuno con la propria spunta nel pannello "Livelli del cantiere" (key
 - "Localizzazione di cantiere": un punto costruito da cantiere.lat/lng;
   spostandolo e salvando le modifiche del layer, la nuova posizione viene
   scritta su Matrice (cantiere.lat/lng).
-- "Area di cantiere (disegno)": un poligono disegnabile a mano con gli
+- "Aree (disegno)": un poligono disegnabile a mano con gli
   strumenti di editing normali di QGIS (Attiva editing -> Aggiungi
   elemento poligono), precaricato con l'area gia' salvata su Matrice se
   presente. Il salvataggio verso Matrice NON e' automatico (a differenza
@@ -37,7 +37,7 @@ from qgis.core import (
 from qgis.PyQt import sip
 
 NOME_LAYER_PUNTO = "Localizzazione di cantiere"
-NOME_LAYER_AREA = "Area di cantiere (disegno)"
+NOME_LAYER_AREA = "Aree (disegno)"
 NOME_LAYER_BUFFER = "Area buffer indagine"
 
 
@@ -69,7 +69,7 @@ def calcola_buffer_wkt(area_wkt, distanza_m, segmenti=16):
     """
     geometria = QgsGeometry.fromWkt(area_wkt)
     if geometria.isNull():
-        raise ValueError("Area di cantiere non valida: impossibile calcolare il buffer.")
+        raise ValueError("Area non valida: impossibile calcolare il buffer.")
     centro = geometria.centroid().asPoint()
     crs_metrico = QgsCoordinateReferenceSystem.fromProj(
         f"+proj=aeqd +lat_0={centro.y()} +lon_0={centro.x()} +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"
@@ -167,11 +167,11 @@ class LocalizzazioneManager:
             nodo.setItemVisibilityChecked(visibile)
 
     # ------------------------------------------------------------------
-    # "Area di cantiere (disegno)" (poligono, disegnabile)
+    # "Aree (disegno)" (poligono, disegnabile)
     # ------------------------------------------------------------------
     def layer_area(self, cantiere_id, nome_cantiere, wkt_esistente):
         """
-        Ritorna il layer "Area di cantiere (disegno)" del cantiere,
+        Ritorna il layer "Aree (disegno)" del cantiere,
         creandolo se non esiste ancora -- precaricato con l'area gia'
         presente su Matrice (cantiere.area_geom_wkt), se c'e'. Un solo
         layer per cantiere per sessione QGIS, riusato se gia' aperto (non si
@@ -305,7 +305,7 @@ class LocalizzazioneManager:
         """
         Legge la prima geometria di un file vettoriale (shapefile/GeoPackage/
         KML) e la ritorna come WKT in EPSG:4326, per l'import manuale
-        dell'area di cantiere (sezione 4 della spec). Ogni altro formato o
+        delle aree (Area 1, Area 2...) (sezione 4 della spec). Ogni altro formato o
         geometria supportato da OGR funziona per lo stesso motivo per cui
         core/gps_import.py apre file GPX/GeoJSON: QgsVectorLayer li legge
         tutti con lo stesso codice, il provider cambia da solo in base

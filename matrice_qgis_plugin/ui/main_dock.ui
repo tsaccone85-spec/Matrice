@@ -126,7 +126,7 @@
       <string>Salva area intervento su Matrice</string>
      </property>
      <property name="toolTip">
-      <string>Scrive su Matrice il poligono disegnato nel layer "Area di cantiere (disegno)".</string>
+      <string>Scrive su Matrice il poligono disegnato nel layer "Aree (disegno)".</string>
      </property>
     </widget>
    </item>

@@ -1,5 +1,5 @@
 """
-Tavola di stampa "Localizzazione area di cantiere" (sezione 7), a scala
+Tavola di stampa "Localizzazione aree" (sezione 7), a scala
 fissa 1:200: un layout di stampa per cantiere, creato una sola volta dal
 modello fornito dall'operatore (config/layouts/localizzazione_1_200.qpt,
 senza riquadro mappa -- lo si aggiunge qui) e poi sempre riusato, mai
@@ -46,7 +46,7 @@ class PrintLayoutManager:
         self.template_path = template_path
 
     def _nome_layout(self, nome_cantiere):
-        return f"Localizzazione area di cantiere - {nome_cantiere}"
+        return f"Localizzazione aree - {nome_cantiere}"
 
     def get_or_create_layout(self, nome_cantiere):
         """
@@ -98,7 +98,7 @@ class PrintLayoutManager:
         """
         Centra la mappa sul punto/area di localizzazione del cantiere a
         scala fissa 1:200 (sezione 7), mostrando solo i layer passati
-        (sfondo + localizzazione/area del cantiere), non l'intero progetto.
+        (sfondo + localizzazione/aree), non l'intero progetto.
         """
         map_item = self._map_item(layout)
         map_item.setLayers(layers)
@@ -115,7 +115,7 @@ class PrintLayoutManager:
         """Nome del cantiere nel titolo del modello, sopra la scritta fissa "Scala 1:200"."""
         for item in layout.items():
             if isinstance(item, QgsLayoutItemLabel) and "Scala 1:200" in item.text():
-                item.setText(f"{nome_cantiere}\nLocalizzazione area di cantiere\nScala 1:200")
+                item.setText(f"{nome_cantiere}\nLocalizzazione aree\nScala 1:200")
                 return
 
     def esporta_pdf(self, layout, percorso_pdf):

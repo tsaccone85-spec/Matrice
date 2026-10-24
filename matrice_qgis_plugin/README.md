@@ -162,7 +162,7 @@ di Progettazione **non chiuso** (`_aggiorna_menu_progettazione` in
   continuo. Tabella PROPRIA `carotaggio_progettazione` (vista
   `v_carotaggio_progettazione_qgis`, codice CAR-01, CAR-02... automatico),
   separata da `carotaggio` della Lettura carotaggi.
-- **"Crea buffer area di indagine..."**: buffer attorno all'area di cantiere
+- **"Crea buffer area di indagine..."**: buffer attorno alle aree (Area 1, Area 2...)
   salvato su `cantiere.area_buffer_geom_wkt`.
 - **"Sposta elemento"/"Ruota elemento"**: strumenti nativi QGIS.
 - **Rinvenimenti**: NON si creano da QGIS (arrivano dall'app da campo); da
