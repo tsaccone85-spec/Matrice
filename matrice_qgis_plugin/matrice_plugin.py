@@ -663,7 +663,7 @@ class MatricePlugin:
         """
         cantiere_id = self.session.cantiere_corrente_id
         rilievo = self.layer_manager.current_layers(cantiere_id).get("rilievo_geometria") if cantiere_id else None
-        self.dock_widget.set_us_attive_visibile(layer is not None and rilievo is not None and layer.id() == rilievo.id())
+        self.dock_widget.set_us_attive_visibile(self._stesso_layer(layer, rilievo))
 
         # Viste rapide legate a un layer specifico (oggi: le 3 viste
         # sull'esito delle colonne stratigrafiche) compaiono nel menu solo
@@ -680,9 +680,23 @@ class MatricePlugin:
         if cantiere_id is None or layer is None:
             return None
         for key, candidato in self.layer_manager.current_layers(cantiere_id).items():
-            if candidato.id() == layer.id():
+            if self._stesso_layer(layer, candidato):
                 return key
         return None
+
+    @staticmethod
+    def _stesso_layer(a, b):
+        """
+        True se a e b sono lo stesso layer. Tollera layer gia' eliminati da
+        QGIS (RuntimeError: wrapped C/C++ object ... has been deleted): il
+        layer_manager puo' tenere riferimenti a layer rimossi dal progetto.
+        """
+        if a is None or b is None:
+            return False
+        try:
+            return a.id() == b.id()
+        except RuntimeError:
+            return False
 
     def _apri_nuovo_rettangolo(self, tipo):
         """
