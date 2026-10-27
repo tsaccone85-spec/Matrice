@@ -23,7 +23,7 @@ from .core.db_connector import MatriceConnection
 from .core.dem_sampler import DemSampler
 from .core.gps_import import GpsImporter
 from .core.join_elenchi import aggiungi_join_elenchi
-from .core.layer_manager import LAYER_SOURCES, LayerManager
+from .core.layer_manager import CHIAVI_GRUPPO_VPA, LAYER_SOURCES, LayerManager
 
 # Raggruppamento del pannello "Livelli del cantiere" per flusso di lavoro
 # (chiesto da Tommaso, 2026-10-13): i livelli provenienti dalla fase di
@@ -566,6 +566,7 @@ class MatricePlugin:
             self._rimuovi_layer_cantiere(cantiere_precedente)
 
         self.session.cantiere_corrente_id = cantiere_id
+        self.layer_manager.imposta_vpa(cantiere_id, self._vpa_abilitato(cantiere_id))
         layers, has_data = self.layer_manager.load_cantiere(cantiere_id, nome_cantiere)
 
         # Sfondo CTR della Regione del cantiere (core/basemap_manager.py),
@@ -616,8 +617,9 @@ class MatricePlugin:
                 self._watch_layer_sync(key, layer, cantiere_id)
 
         layer_states = [
-            (key, opts["display_name"], has_data[key], _GRUPPO_LIVELLI.get(key))
-            for key, opts in LAYER_SOURCES.items()
+            (key, LAYER_SOURCES[key]["display_name"], has_data[key],
+             self.layer_manager.gruppo_di(cantiere_id, key))
+            for key in self.layer_manager.chiavi_disponibili(cantiere_id)
         ]
         # "Localizzazione di cantiere" e "Aree" non sono layer
         # PostGIS come gli altri (vedi core/localizzazione_manager.py): due
@@ -654,6 +656,32 @@ class MatricePlugin:
         # della tavola precedente, quindi currentLayerChanged non scatta da
         # solo -- va valutato subito anche qui).
         self._handle_active_layer_changed(self.iface.activeLayer())
+
+    def _vpa_abilitato(self, cantiere_id):
+        """
+        True se il cantiere e' di tipo VPA e l'utente loggato puo' usare la VPA.
+        Il ruolo del database del plugin non e' soggetto alla RLS: l'accesso si
+        verifica con il token dell'utente, che la RLS (anche la regola «VPA
+        riservata») la subisce. Una riga di vpa_progetto visibile = accesso ok.
+        Mai bloccante: in caso di errore i layer VPA non si caricano.
+        """
+        try:
+            tipo, _stato, _origine = self.matrice_api.get_stato_progettazione(cantiere_id, self.session.access_token)
+            if tipo != "vpa":
+                return False
+            righe = self.matrice_api.rest.select(
+                "vpa_progetto", self.session.access_token,
+                params={"cantiere_id": f"eq.{cantiere_id}", "select": "id", "limit": "1"},
+            )
+        except Exception:
+            return False
+        if not righe:
+            self.iface.messageBar().pushInfo(
+                "Matrice",
+                "Livelli VPA non caricati: apri prima la VPA dall'app (o l'accesso alla VPA non e' abilitato).",
+            )
+            return False
+        return True
 
     def _handle_active_layer_changed(self, layer):
         """
@@ -968,6 +996,10 @@ class MatricePlugin:
 
     def _watch_layer_sync(self, key, layer, cantiere_id):
         """Aggancia il layer appena mostrato in mappa al percorso di sincronizzazione giusto (sezione 5)."""
+        if key in CHIAVI_GRUPPO_VPA:
+            # Viste VPA con trigger INSTEAD OF: il commit scrive gia' su Matrice,
+            # nessuno storico (us_storico_modifiche non ammette le tabelle VPA).
+            return
         if key in LayerManager.POINT_SYNC_TABLES:
             table_name = LayerManager.POINT_SYNC_TABLES[key]
             self.point_sync_handler.watch(layer, table_name, cantiere_id)
@@ -1019,13 +1051,14 @@ class MatricePlugin:
                     self._apply_us_style(layer)
                 elif key in ("colonna_stratigrafica", "carotaggio"):
                     self.style_manager.apply_esito_style(layer)
-            if key in CHIAVI_LAYER_PROGETTAZIONE:
-                # Spuntare un livello Progettazione apre subito la matita.
+            if key in CHIAVI_LAYER_PROGETTAZIONE or key in CHIAVI_GRUPPO_VPA:
+                # Spuntare un livello Progettazione/VPA apre subito la matita.
                 self.iface.setActiveLayer(layer)
                 if not layer.isEditable():
                     layer.startEditing()
         else:
-            if key in CHIAVI_LAYER_PROGETTAZIONE and not self._salva_layer_in_modifica(cantiere_id, key):
+            if (key in CHIAVI_LAYER_PROGETTAZIONE or key in CHIAVI_GRUPPO_VPA) \
+                    and not self._salva_layer_in_modifica(cantiere_id, key):
                 return
             self.layer_manager.hide_layer(cantiere_id, key)
 

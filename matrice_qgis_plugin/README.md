@@ -144,6 +144,10 @@ dello stesso colore ne' facilmente confondibili tra loro.
   scrivere, nessuna scrittura su Matrice senza conferma esplicita
   (`core/gps_import.py`)
 
+## Gruppo di livelli «VPA» (v0.3.0, 2026-10-27)
+
+Nei cantieri di tipo VPA, se l'utente ha accesso alla VPA, il plugin carica il gruppo «VPA» nel pannello Livelli: Area di progetto (MOPR), Siti (punti, linee, poligoni) e, riusate dalla Progettazione, le Unit� di ricognizione e i Rinvenimenti. Le geometrie sono in WGS84 (EPSG:4326) e si modificano dalla matita: il salvataggio scrive direttamente su Matrice (viste `v_vpa_progetto_qgis` e `v_vpa_sito_qgis`, migrazione 0100). Se i livelli non compaiono, apri prima la VPA dall'app.
+
 ## Menu "Progettazione" (toolbar, aggiornato 2026-10-19, v0.2.0)
 
 Il bottone "Progettazione" si abilita all'apertura della tavola di un

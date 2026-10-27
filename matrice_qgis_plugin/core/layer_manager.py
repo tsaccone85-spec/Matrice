@@ -139,6 +139,19 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "created_by", "attributi"),
         "espressione_display": "coalesce(\"nome\", \"codice_norma\", 'Vincolo')",
     },
+    # Confini dei comuni ISTAT toccati dall'area (strumento «Confini comunali»,
+    # migrazione 0078): solo contorno, per non coprire il resto.
+    "progettazione_confine_comunale": {
+        "source": "v_progettazione_confine_comunale_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Progettazione - confini comunali",
+        "wkb_type": Qgis.WkbType.MultiPolygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "cod_prov", "cod_reg"),
+        "espressione_display": "coalesce(\"nome\", \"pro_com_t\")",
+        "stile": {"riempimento": None, "contorno": "#6a1b9a"},
+    },
     # Trincee e Saggi del flusso Progettazione Archeologica (migrazione
     # 0068_trincea_saggio_progettazione.sql): rettangoli creati dal menu
     # "Progettazione" della toolbar (core/rettangolo_progettazione.py), non
@@ -153,6 +166,7 @@ LAYER_SOURCES = {
         "srid": 4326,
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "\"nome\"",
+        "stile": {"riempimento": "#e53935", "contorno": "#e53935"},
     },
     "saggio_progettazione": {
         "source": "v_saggio_progettazione_qgis",
@@ -163,6 +177,7 @@ LAYER_SOURCES = {
         "srid": 4326,
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "\"nome\"",
+        "stile": {"riempimento": "#1e66f5", "contorno": "#1e66f5"},
     },
     "survey_ur": {
         "source": "v_survey_ur_qgis",
@@ -185,6 +200,8 @@ LAYER_SOURCES = {
         # form QGIS salva anche con codice_ur vuoto e il DB rifiuta la riga.
         "campi_obbligatori": ("codice_ur",),
         "espressione_display": "\"codice_ur\"",
+        # Contorno UR sempre nero, interno trasparente.
+        "stile": {"riempimento": None, "contorno": "#000000"},
     },
     # Carotaggi PREVISTI dalla Progettazione: tabella propria
     # (carotaggio_progettazione), distinta da "carotaggio" che appartiene al
@@ -198,6 +215,7 @@ LAYER_SOURCES = {
         "srid": 4326,
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "\"nome\"",
+        "stile": {"riempimento": "#fb8c00", "contorno": "#e65100"},
     },
     # Buffer attorno all'area di indagine (migrazione 0082): un poligono per
     # cantiere, generato da "Crea buffer area di indagine" e modificabile.
@@ -210,6 +228,66 @@ LAYER_SOURCES = {
         "srid": 4326,
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "'Buffer ' || coalesce(to_string(\"distanza_m\"), '')",
+    },
+    # ---- VPA (Verifica preventiva): viste 0100_vpa_qgis.sql --------------------
+    # La VPA salva la geometria come WKT testuale; le viste la espongono come
+    # geometry PostGIS e riscrivono su vpa_progetto / vpa_sito con trigger
+    # INSTEAD OF. Compaiono solo nei cantieri VPA (`solo_vpa`). Ricognizioni e
+    # Unita' di ricognizione riusano i layer survey_ur / survey_ritrovamento
+    # della Progettazione (vedi CHIAVI_RICOGNIZIONE_VPA).
+    "vpa_progetto": {
+        "source": "v_vpa_progetto_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "VPA - Area di progetto (MOPR)",
+        "wkb_type": Qgis.WkbType.MultiPolygon,
+        "srid": 4326,
+        "solo_vpa": True,
+        "campi_nascosti": ("id", "cantiere_id", "created_at"),
+        "campi_sola_lettura": ("id_progett",),
+        "espressione_display": "coalesce(\"ogn\", \"id_progett\", 'Area di progetto')",
+        "stile": {"riempimento": None, "contorno": "#2e7d32"},
+    },
+    # Il sito puo' essere punto, linea o poligono: tre layer sulla stessa vista,
+    # distinti dal filtro sul tipo di geometria (un layer QGIS ha un tipo solo).
+    "vpa_sito_punti": {
+        "source": "v_vpa_sito_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "VPA - Siti (punti)",
+        "wkb_type": Qgis.WkbType.MultiPoint,
+        "srid": 4326,
+        "filtro_sql": "geometrytype(geom) in ('POINT', 'MULTIPOINT')",
+        "solo_vpa": True,
+        "campi_nascosti": ("id", "cantiere_id", "id_progett", "created_at"),
+        "espressione_display": "\"id_sito\" || coalesce(' - ' || \"ogn\", '')",
+        "stile": {"riempimento": "#8e24aa", "contorno": "#4a148c"},
+    },
+    "vpa_sito_linee": {
+        "source": "v_vpa_sito_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "VPA - Siti (linee)",
+        "wkb_type": Qgis.WkbType.MultiLineString,
+        "srid": 4326,
+        "filtro_sql": "geometrytype(geom) in ('LINESTRING', 'MULTILINESTRING')",
+        "solo_vpa": True,
+        "campi_nascosti": ("id", "cantiere_id", "id_progett", "created_at"),
+        "espressione_display": "\"id_sito\" || coalesce(' - ' || \"ogn\", '')",
+        "stile": {"riempimento": None, "contorno": "#8e24aa"},
+    },
+    "vpa_sito_poligoni": {
+        "source": "v_vpa_sito_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "VPA - Siti (poligoni)",
+        "wkb_type": Qgis.WkbType.MultiPolygon,
+        "srid": 4326,
+        "filtro_sql": "geometrytype(geom) in ('POLYGON', 'MULTIPOLYGON')",
+        "solo_vpa": True,
+        "campi_nascosti": ("id", "cantiere_id", "id_progett", "created_at"),
+        "espressione_display": "\"id_sito\" || coalesce(' - ' || \"ogn\", '')",
+        "stile": {"riempimento": "#8e24aa", "contorno": "#4a148c"},
     },
     "survey_ritrovamento": {
         "source": "v_survey_ritrovamento_qgis",
@@ -237,8 +315,13 @@ RIFERIMENTI_PER_TIPO_INTERVENTO = {
     "carotaggi": ("carotaggio_progettazione",),
     "sorveglianza": ("trincea_progettazione", "saggio_progettazione"),
 }
+# Gruppo «VPA»: i layer propri della Verifica preventiva e, nei cantieri VPA, le
+# ricognizioni (UR e rinvenimenti) del flusso Progettazione, riusate cosi' come sono.
+GRUPPO_VPA = "VPA"
+CHIAVI_GRUPPO_VPA = ("vpa_progetto", "vpa_sito_punti", "vpa_sito_linee", "vpa_sito_poligoni")
+CHIAVI_RICOGNIZIONE_VPA = ("survey_ur", "survey_ritrovamento")
 CHIAVI_GRUPPO_PROGETTAZIONE = (
-    "progettazione_cropmark", "progettazione_vincolo", "trincea_progettazione",
+    "progettazione_cropmark", "progettazione_vincolo", "progettazione_confine_comunale", "trincea_progettazione",
     "saggio_progettazione", "survey_ur", "survey_ritrovamento", "carotaggio_progettazione",
     "buffer_progettazione",
 )
@@ -251,6 +334,29 @@ class LayerManager:
         self._layers_by_cantiere = {}
         self._nome_by_cantiere = {}
         self._riferimenti_by_cantiere = {}  # layer di sola lettura dalla Progettazione di origine
+        self._vpa_cantieri = set()  # cantieri VPA con accesso VPA verificato
+
+    def imposta_vpa(self, cantiere_id, abilitato):
+        """Marca il cantiere come VPA abilitato: solo cosi' si caricano i layer `solo_vpa`."""
+        if abilitato:
+            self._vpa_cantieri.add(cantiere_id)
+        else:
+            self._vpa_cantieri.discard(cantiere_id)
+
+    def e_vpa(self, cantiere_id):
+        return cantiere_id in self._vpa_cantieri
+
+    def chiavi_disponibili(self, cantiere_id):
+        """Chiavi di LAYER_SOURCES caricabili per il cantiere (i layer VPA solo nei cantieri VPA)."""
+        return [k for k, o in LAYER_SOURCES.items() if not o.get("solo_vpa") or self.e_vpa(cantiere_id)]
+
+    def gruppo_di(self, cantiere_id, key):
+        """Nome del gruppo del pannello Livelli QGIS in cui sta `key`, o None (radice)."""
+        if key in CHIAVI_GRUPPO_VPA or (key in CHIAVI_RICOGNIZIONE_VPA and self.e_vpa(cantiere_id)):
+            return GRUPPO_VPA
+        if key in CHIAVI_GRUPPO_PROGETTAZIONE:
+            return GRUPPO_PROGETTAZIONE
+        return None
 
     def nome_cantiere(self, cantiere_id):
         """Nome del cantiere passato all'ultimo load_cantiere() per questo id, o None se non noto."""
@@ -267,7 +373,10 @@ class LayerManager:
             srid=opts["srid"],
         )
         # cantiere_id e' un uuid, non un intero: va quotato nel subset SQL.
-        uri.setSql(f"cantiere_id = '{cantiere_id}'")
+        filtro = f"cantiere_id = '{cantiere_id}'"
+        if opts.get("filtro_sql"):
+            filtro += f" and {opts['filtro_sql']}"
+        uri.setSql(filtro)
         # Nome cantiere nel titolo del layer (se noto) invece del suo uuid,
         # molto piu' leggibile nel pannello Livelli.
         nome_cantiere = self._nome_by_cantiere.get(cantiere_id, cantiere_id)
@@ -350,6 +459,42 @@ class LayerManager:
         if espressione_display:
             layer.setDisplayExpression(espressione_display)
 
+        stile = opts.get("stile")
+        if stile:
+            self._applica_stile_fisso(layer, stile)
+
+    @staticmethod
+    def _applica_stile_fisso(layer, stile):
+        """
+        Colori fissi della Progettazione: trincee rosse, saggi blu, carotaggi
+        arancioni, contorno UR nero. Simbolo unico, applicato a ogni apertura.
+        """
+        from qgis.core import QgsFillSymbol, QgsLineSymbol, QgsMarkerSymbol, QgsSingleSymbolRenderer
+        from qgis.PyQt.QtGui import QColor
+
+        contorno = QColor(stile["contorno"])
+        if stile["riempimento"]:
+            riempimento = QColor(stile["riempimento"])
+            riempimento.setAlpha(90)
+            riempimento_txt = f"{riempimento.red()},{riempimento.green()},{riempimento.blue()},{riempimento.alpha()}"
+        else:
+            riempimento_txt = "0,0,0,0"
+        contorno_txt = f"{contorno.red()},{contorno.green()},{contorno.blue()},255"
+
+        if layer.geometryType() == Qgis.GeometryType.Point:
+            simbolo = QgsMarkerSymbol.createSimple({
+                "name": "circle", "size": "3.6",
+                "color": f"{QColor(stile['riempimento']).red()},{QColor(stile['riempimento']).green()},{QColor(stile['riempimento']).blue()},255",
+                "outline_color": contorno_txt, "outline_width": "0.4",
+            })
+        elif layer.geometryType() == Qgis.GeometryType.Line:
+            simbolo = QgsLineSymbol.createSimple({"line_color": contorno_txt, "line_width": "0.9"})
+        else:
+            simbolo = QgsFillSymbol.createSimple({
+                "color": riempimento_txt, "outline_color": contorno_txt, "outline_width": "0.8",
+            })
+        layer.setRenderer(QgsSingleSymbolRenderer(simbolo))
+
     def load_cantiere(self, cantiere_id, nome_cantiere=None):
         """
         Carica (o ricarica) i layer del cantiere selezionato (sezione 4,
@@ -370,7 +515,7 @@ class LayerManager:
 
         layers = {}
         has_data = {}
-        for key in LAYER_SOURCES:
+        for key in self.chiavi_disponibili(cantiere_id):
             # Un layer che non si carica (es. grant mancante su una vista
             # in produzione) non deve bloccare gli altri: senza questo
             # try/except un solo RuntimeError qui impediva anche
@@ -383,7 +528,7 @@ class LayerManager:
                 continue
             layers[key] = layer
             if layer.featureCount() > 0:
-                self._aggiungi_in_mappa(layer, key)
+                self._aggiungi_in_mappa(layer, key, cantiere_id)
                 has_data[key] = True
             else:
                 has_data[key] = False
@@ -391,13 +536,14 @@ class LayerManager:
         self._layers_by_cantiere[cantiere_id] = layers
         return layers, has_data
 
-    def _aggiungi_in_mappa(self, layer, key):
-        """Aggiunge `layer` al progetto, nel gruppo "Progettazione" se ne fa parte."""
-        if key not in CHIAVI_GRUPPO_PROGETTAZIONE:
+    def _aggiungi_in_mappa(self, layer, key, cantiere_id=None):
+        """Aggiunge `layer` al progetto, nel gruppo "Progettazione" o "VPA" se ne fa parte."""
+        nome_gruppo = self.gruppo_di(cantiere_id, key)
+        if nome_gruppo is None:
             QgsProject.instance().addMapLayer(layer)
             return
         radice = QgsProject.instance().layerTreeRoot()
-        gruppo = radice.findGroup(GRUPPO_PROGETTAZIONE) or radice.addGroup(GRUPPO_PROGETTAZIONE)
+        gruppo = radice.findGroup(nome_gruppo) or radice.addGroup(nome_gruppo)
         QgsProject.instance().addMapLayer(layer, False)
         gruppo.addLayer(layer)
 
@@ -467,7 +613,7 @@ class LayerManager:
             return layer, True  # gia' visibile, nessuna nuova azione da fare
 
         layer = self._build_layer(cantiere_id, key)
-        self._aggiungi_in_mappa(layer, key)
+        self._aggiungi_in_mappa(layer, key, cantiere_id)
         self._layers_by_cantiere.setdefault(cantiere_id, {})[key] = layer
         return layer, False
 
