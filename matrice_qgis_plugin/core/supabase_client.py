@@ -111,12 +111,51 @@ class SupabaseRestClient:
     # ------------------------------------------------------------------
     def download_object(self, bucket, path, access_token):
         """
-        Scarica un file da Storage. Ritorna (dati, None) se riuscito, o
-        (None, messaggio_errore) altrimenti -- il messaggio e' diagnostico
-        (per capire PERCHE' una foto non si vede: permessi, percorso
-        sbagliato, rete), non va mostrato cosi' com'e' in un contesto non
-        tecnico, ma e' utile in fase di verifica.
+        Scarica un file. Dal 2026-10-27 foto, GeoPackage e documenti stanno su
+        Cloudflare R2: si chiede un URL firmato alla Edge Function `r2-storage`
+        (permessi verificati li' col token dell'utente) e si scarica da R2. Se su
+        R2 il file non c'e' ancora (404) -- copia in corso -- ripiega sul vecchio
+        bucket Supabase. Ritorna (dati, None) se riuscito, o (None,
+        messaggio_errore) altrimenti: il messaggio e' diagnostico, non va
+        mostrato cosi' com'e' in un contesto non tecnico.
         """
+        dati, errore = self._download_r2(bucket, path, access_token)
+        if dati is not None or errore != "R2:404":
+            return dati, (None if dati is not None else errore)
+        return self._download_supabase(bucket, path, access_token)
+
+    def _download_r2(self, bucket, path, access_token):
+        url_funzione = f"{self.base_url}/functions/v1/r2-storage"
+        try:
+            risposta = self._request(
+                "POST", url_funzione, access_token=access_token,
+                body={"azione": "firma-get", "bucket": bucket, "path": path},
+            )
+        except _HttpError as exc:
+            if exc.status in (401, 403):
+                return None, f"HTTP {exc.status}: {exc.message[:200]}"
+            # Funzione non raggiungibile/in errore: prova il vecchio endpoint.
+            return None, "R2:404"
+        except ConnectionError as exc:
+            return None, f"Rete: {exc}"
+        url = (risposta or {}).get("url")
+        if not url:
+            return None, "R2:404"
+        # URL firmato: nessun header di autenticazione (romperebbe la firma).
+        request = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return response.read(), None
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None, "R2:404"
+            corpo = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            return None, f"HTTP {exc.code}: {corpo[:200]}"
+        except urllib.error.URLError as exc:
+            return None, f"Rete: {exc.reason}"
+
+    def _download_supabase(self, bucket, path, access_token):
+        """Vecchio endpoint Storage di Supabase (fallback finche' i file ci sono)."""
         url = f"{self.base_url}/storage/v1/object/{bucket}/{path}"
         headers = {"apikey": self.anon_key, "Authorization": f"Bearer {access_token or self.anon_key}"}
         request = urllib.request.Request(url, headers=headers, method="GET")
