@@ -144,6 +144,10 @@ dello stesso colore ne' facilmente confondibili tra loro.
   scrivere, nessuna scrittura su Matrice senza conferma esplicita
   (`core/gps_import.py`)
 
+## Anteprime foto in tabella attributi (v0.3.1, 2026-10-27)
+
+Nei layer con foto (Carotaggi, Colonne stratigrafiche, Sezioni e prospetti) i campi foto usano il widget «Allegato» di QGIS con anteprima immagine. Le foto si scaricano in background in una cartella temporanea (`matrice_foto_cache` nella cartella temp del sistema) all'apertura del layer; a fine scarico il layer si ridisegna e le anteprime compaiono. Il valore del campo resta il percorso relativo: nessuna scrittura diversa su Matrice. Eventuali foto non scaricate sono nel pannello Messaggi di log (scheda «Matrice»).
+
 ## Gruppo di livelli «VPA» (v0.3.0, 2026-10-27)
 
 Nei cantieri di tipo VPA, se l'utente ha accesso alla VPA, il plugin carica il gruppo «VPA» nel pannello Livelli: Area di progetto (MOPR), Siti (punti, linee, poligoni) e, riusate dalla Progettazione, le Unit� di ricognizione e i Rinvenimenti. Le geometrie sono in WGS84 (EPSG:4326) e si modificano dalla matita: il salvataggio scrive direttamente su Matrice (viste `v_vpa_progetto_qgis` e `v_vpa_sito_qgis`, migrazione 0100). Se i livelli non compaiono, apri prima la VPA dall'app.

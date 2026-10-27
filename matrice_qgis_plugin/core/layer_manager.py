@@ -87,6 +87,7 @@ LAYER_SOURCES = {
         # testo grezzo in tabella attributi -- tolto su richiesta esplicita,
         # non e' un id tecnico come gli altri campi qui.
         "campi_nascosti": ("id", "cantiere_id", "created_by", "stratigrafia"),
+        "campi_foto": ("foto_1_url", "foto_2_url", "foto_3_url"),
         "espressione_display": "'Carotaggio ' || \"numero_carotaggio\"",
     },
     "colonna_stratigrafica": {
@@ -97,6 +98,7 @@ LAYER_SOURCES = {
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
         "campi_nascosti": ("id", "cantiere_id", "created_by", "stratigrafia", "storage_provider", "disegno_tavola"),
+        "campi_foto": ("foto_1_url", "foto_2_url", "foto_3_url"),
         "espressione_display": "'Colonna ' || \"numero_colonna\"",
     },
     "sezione_prospetto": {
@@ -107,6 +109,7 @@ LAYER_SOURCES = {
         "wkb_type": Qgis.WkbType.Point,
         "srid": 4326,
         "campi_nascosti": ("id", "cantiere_id", "origine_ocr_id"),
+        "campi_foto": ("file_url",),
         "espressione_display": "'Sezione ' || \"numero_sezione\"",
     },
     # Candidati di segni archeologici (crop/soil/shadow mark) rilevati
@@ -335,6 +338,7 @@ class LayerManager:
         self._nome_by_cantiere = {}
         self._riferimenti_by_cantiere = {}  # layer di sola lettura dalla Progettazione di origine
         self._vpa_cantieri = set()  # cantieri VPA con accesso VPA verificato
+        self.su_layer_aggiunto = None  # callback(layer, campi_foto) dopo l'aggiunta in mappa (anteprime foto)
 
     def imposta_vpa(self, cantiere_id, abilitato):
         """Marca il cantiere come VPA abilitato: solo cosi' si caricano i layer `solo_vpa`."""
@@ -455,6 +459,11 @@ class LayerManager:
                     "Il campo è obbligatorio.",
                 )
 
+        campi_foto = opts.get("campi_foto", ())
+        if campi_foto:
+            from .foto_cache import applica_widget_foto
+            applica_widget_foto(layer, campi_foto)
+
         espressione_display = opts.get("espressione_display")
         if espressione_display:
             layer.setDisplayExpression(espressione_display)
@@ -541,11 +550,21 @@ class LayerManager:
         nome_gruppo = self.gruppo_di(cantiere_id, key)
         if nome_gruppo is None:
             QgsProject.instance().addMapLayer(layer)
+            self._notifica_aggiunto(layer, key)
             return
         radice = QgsProject.instance().layerTreeRoot()
         gruppo = radice.findGroup(nome_gruppo) or radice.addGroup(nome_gruppo)
         QgsProject.instance().addMapLayer(layer, False)
         gruppo.addLayer(layer)
+        self._notifica_aggiunto(layer, key)
+
+    def _notifica_aggiunto(self, layer, key):
+        campi = LAYER_SOURCES.get(key, {}).get("campi_foto")
+        if self.su_layer_aggiunto is not None and campi:
+            try:
+                self.su_layer_aggiunto(layer, campi)
+            except Exception:  # mai bloccante: le anteprime sono un di piu'
+                pass
 
     def carica_riferimento(self, cantiere_id, origine_id, chiavi):
         """

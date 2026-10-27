@@ -113,6 +113,7 @@ class MatricePlugin:
         # connessione diretta (sezione 1 -- "servizio intermedio").
         self.matrice_api = MatriceApi(self.session)
         self.layer_manager = LayerManager(self.connection, self.session)
+        self.layer_manager.su_layer_aggiunto = self._precarica_anteprime_foto
         self.basemap_manager = BasemapManager()
         self.localizzazione_manager = LocalizzazioneManager()
         # "Salva modifiche" sul layer area di QGIS => salva anche su Matrice.
@@ -656,6 +657,11 @@ class MatricePlugin:
         # della tavola precedente, quindi currentLayerChanged non scatta da
         # solo -- va valutato subito anche qui).
         self._handle_active_layer_changed(self.iface.activeLayer())
+
+    def _precarica_anteprime_foto(self, layer, campi_foto):
+        """Scarica in background le foto dei layer con colonne foto (core/foto_cache.py)."""
+        from .core.foto_cache import precarica_foto
+        precarica_foto(layer, campi_foto, self.matrice_api, self.session.access_token)
 
     def _vpa_abilitato(self, cantiere_id):
         """
