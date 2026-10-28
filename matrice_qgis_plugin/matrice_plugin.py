@@ -1074,6 +1074,10 @@ class MatricePlugin:
         modifiche si salvano. Se il salvataggio fallisce il livello resta in
         mappa e in modifica (niente perdita di dati) e l'operatore vede l'errore.
         """
+        if not self.layer_manager.is_layer_shown(cantiere_id, key):
+            # Mai caricato, o rimosso a mano dal pannello Livelli di QGIS
+            # (oggetto C++ gia' distrutto): niente da salvare.
+            return True
         layer = self.layer_manager.current_layers(cantiere_id).get(key)
         if layer is None or not layer.isEditable():
             return True
