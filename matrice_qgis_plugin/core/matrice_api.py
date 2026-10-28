@@ -101,6 +101,11 @@ class MatriceApi:
         rows = self.rest.select("utente", access_token, params={"id": f"eq.{self.session.user_id}", "select": "sistema_riferimento_id"})
         return rows[0]["sistema_riferimento_id"] if rows else 1
 
+    def sr_scavo_cantiere(self, cantiere_id, access_token):
+        """id (SISTEMI_RIFERIMENTO) del sistema dei dati di scavo confermato nell'app, o None."""
+        rows = self.rest.select("cantiere", access_token, params={"id": f"eq.{cantiere_id}", "select": "sr_scavo_id"})
+        return rows[0].get("sr_scavo_id") if rows else None
+
     def tipi_intervento_consentiti(self, access_token):
         """
         Sottoinsieme di TIPI_INTERVENTO che l'utente loggato puo' scegliere

@@ -338,6 +338,7 @@ class LayerManager:
         self._nome_by_cantiere = {}
         self._riferimenti_by_cantiere = {}  # layer di sola lettura dalla Progettazione di origine
         self._vpa_cantieri = set()  # cantieri VPA con accesso VPA verificato
+        self._epsg_scavo_by_cantiere = {}  # cantiere_id -> EPSG dei dati di scavo (cantiere.sr_scavo_id)
         self.su_layer_aggiunto = None  # callback(layer, campi_foto) dopo l'aggiunta in mappa (anteprime foto)
 
     def imposta_vpa(self, cantiere_id, abilitato):
@@ -346,6 +347,19 @@ class LayerManager:
             self._vpa_cantieri.add(cantiere_id)
         else:
             self._vpa_cantieri.discard(cantiere_id)
+
+    def imposta_sr_scavo(self, cantiere_id, epsg):
+        """
+        EPSG dei dati di scavo del cantiere, confermato nell'app (blocco
+        «Rilievo GIS», cantiere.sr_scavo_id). Con un valore, il layer «Rilievo
+        vettoriale» si carica dalla colonna `geom_sr` della vista (geometria
+        gia' riproiettata dal DB) con quel CRS; None = nessuna conferma,
+        resta EPSG:4326 su `geom`.
+        """
+        if epsg:
+            self._epsg_scavo_by_cantiere[cantiere_id] = int(epsg)
+        else:
+            self._epsg_scavo_by_cantiere.pop(cantiere_id, None)
 
     def e_vpa(self, cantiere_id):
         return cantiere_id in self._vpa_cantieri
@@ -369,12 +383,16 @@ class LayerManager:
     def _build_layer(self, cantiere_id, key):
         """Costruisce (senza aggiungere in mappa) il layer PostGIS per `key`."""
         opts = LAYER_SOURCES[key]
+        colonna_geom, srid = opts["geometry_column"], opts["srid"]
+        epsg_scavo = self._epsg_scavo_by_cantiere.get(cantiere_id)
+        if key == "rilievo_geometria" and epsg_scavo:
+            colonna_geom, srid = "geom_sr", epsg_scavo
         uri = self.connection.postgis_uri(
             opts["source"],
-            geometry_column=opts["geometry_column"],
+            geometry_column=colonna_geom,
             key_column=opts["key_column"],
             wkb_type=opts["wkb_type"],
-            srid=opts["srid"],
+            srid=srid,
         )
         # cantiere_id e' un uuid, non un intero: va quotato nel subset SQL.
         filtro = f"cantiere_id = '{cantiere_id}'"

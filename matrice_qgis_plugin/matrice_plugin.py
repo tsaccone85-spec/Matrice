@@ -568,6 +568,16 @@ class MatricePlugin:
 
         self.session.cantiere_corrente_id = cantiere_id
         self.layer_manager.imposta_vpa(cantiere_id, self._vpa_abilitato(cantiere_id))
+        # Sistema dei dati di scavo confermato nell'app (cantiere.sr_scavo_id):
+        # e' il CRS del layer «Rilievo vettoriale». Mai bloccante: se la lettura
+        # fallisce o non e' confermato, resta EPSG:4326.
+        epsg_scavo = None
+        try:
+            sr_scavo = self.matrice_api.sr_scavo_cantiere(cantiere_id, self.session.access_token)
+            epsg_scavo = SISTEMI_RIFERIMENTO_EPSG.get(sr_scavo) if sr_scavo else None
+        except Exception:
+            pass
+        self.layer_manager.imposta_sr_scavo(cantiere_id, epsg_scavo)
         layers, has_data = self.layer_manager.load_cantiere(cantiere_id, nome_cantiere)
 
         # Sfondo CTR della Regione del cantiere (core/basemap_manager.py),
@@ -579,13 +589,16 @@ class MatricePlugin:
         except Exception:
             pass
 
-        # CRS di progetto sul sistema di riferimento personale dell'utente
-        # loggato (comodo di visualizzazione/digitazione in QGIS): le
-        # geometrie restano sempre salvate in EPSG:4326, questo non le
-        # tocca. Mai bloccante.
+        # CRS di progetto: il sistema dei dati di scavo confermato nell'app, se
+        # c'e'; altrimenti quello personale dell'utente loggato (comodo di
+        # visualizzazione/digitazione). Le geometrie restano salvate in
+        # EPSG:4326 su Matrice, questo non le tocca. Mai bloccante.
         try:
-            sr_id = self.matrice_api.sistema_riferimento_utente_loggato(self.session.access_token)
-            epsg = SISTEMI_RIFERIMENTO_EPSG.get(sr_id, 4326)
+            if epsg_scavo:
+                epsg = epsg_scavo
+            else:
+                sr_id = self.matrice_api.sistema_riferimento_utente_loggato(self.session.access_token)
+                epsg = SISTEMI_RIFERIMENTO_EPSG.get(sr_id, 4326)
             QgsProject.instance().setCrs(QgsCoordinateReferenceSystem(f"EPSG:{epsg}"))
         except Exception:
             pass
@@ -1074,10 +1087,6 @@ class MatricePlugin:
         modifiche si salvano. Se il salvataggio fallisce il livello resta in
         mappa e in modifica (niente perdita di dati) e l'operatore vede l'errore.
         """
-        if not self.layer_manager.is_layer_shown(cantiere_id, key):
-            # Mai caricato, o rimosso a mano dal pannello Livelli di QGIS
-            # (oggetto C++ gia' distrutto): niente da salvare.
-            return True
         layer = self.layer_manager.current_layers(cantiere_id).get(key)
         if layer is None or not layer.isEditable():
             return True

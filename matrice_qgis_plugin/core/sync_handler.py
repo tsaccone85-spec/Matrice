@@ -72,7 +72,7 @@ class SyncHandler:
         for fid, geometry in changed_geometries.items():
             feature = layer.getFeature(fid)
             id_record = feature[key_field] if key_field in feature.fields().names() else fid
-            wkt = geometry.asWkt()
+            wkt = self._wkt_4326(layer, geometry)
 
             valore_precedente = self._read_current_geom(table, key_field, id_record)
             self.connection.execute(
@@ -80,6 +80,24 @@ class SyncHandler:
                 (wkt, id_record),
             )
             self._log_modifica(table, id_record, "geometria", valore_precedente, wkt, "aggiornamento")
+
+    @staticmethod
+    def _wkt_4326(layer, geometry):
+        """
+        WKT della geometria in EPSG:4326, come si salva su Matrice. Il layer
+        «Rilievo vettoriale» puo' essere nel sistema dei dati di scavo (UTM...):
+        va riproiettato prima della scrittura, altrimenti si scriverebbero
+        metri come gradi.
+        """
+        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsGeometry, QgsProject
+        crs_layer = layer.crs()
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        if not crs_layer.isValid() or crs_layer == wgs84:
+            return geometry.asWkt()
+        copia = QgsGeometry(geometry)
+        if copia.transform(QgsCoordinateTransform(crs_layer, wgs84, QgsProject.instance())) != 0:
+            raise ValueError("Impossibile riproiettare la geometria in EPSG:4326: modifica non salvata.")
+        return copia.asWkt()
 
     def _on_attributes_changed(self, layer, table, changed_values):
         key_field = "id_geom" if table == "rilievo_geometria" else "id"

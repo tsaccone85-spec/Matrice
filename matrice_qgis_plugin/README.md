@@ -192,9 +192,12 @@ I livelli del flusso stanno nel gruppo "Progettazione" dell'albero livelli
 
 All'apertura di un cantiere la mappa si ingrandisce sul cantiere
 (`core/vista_cantiere.py`: evita "Point outside of projection domain" a
-scala mondiale) e il CRS di progetto si imposta sul sistema di riferimento
-personale dell'utente (`core/sistema_riferimento.py`); l'archiviazione
-resta sempre WGS84/4326.
+scala mondiale) e il CRS di progetto si imposta sul sistema dei dati di scavo confermato
+nell'app (blocco «Rilievo GIS», `cantiere.sr_scavo_id`) o, se non confermato, sul
+sistema personale dell'utente (`core/sistema_riferimento.py`). Il layer
+«Rilievo vettoriale» usa lo stesso CRS (colonna `geom_sr` della vista
+`v_rilievo_geometria_qgis`, migrazione 0117) e le modifiche si riproiettano in
+WGS84 prima di salvare: l'archiviazione resta sempre 4326.
 
 ### Database (migrazioni applicate sul progetto Supabase)
 
