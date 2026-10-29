@@ -2,7 +2,7 @@
 name=Matrice - Rilievo di Scavo
 qgisMinimumVersion=3.28
 description=Apertura, editing e sincronizzazione del rilievo vettoriale di scavo con Matrice (US, fasi, geometrie, quote, reperti, sepolture).
-version=0.3.2 (Progettazione, VPA)
+version=0.3.3 (Progettazione, VPA)
 author=Schede Digitali
 email=t.saccone85@gmail.com
 

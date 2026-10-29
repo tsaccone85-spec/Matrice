@@ -137,7 +137,8 @@ def _scopri_layer_wms(url_base, parola_chiave, timeout=TIMEOUT_SECONDS):
         if parola_chiave in testo_confronto and layer_scelto is None:
             layer_scelto = elemento
 
-    elemento = layer_scelto or primo_layer
+    # Non usare `or`: un Element senza figli e' "falso" (e deprecato) in ElementTree.
+    elemento = layer_scelto if layer_scelto is not None else primo_layer
     if elemento is None:
         return None
 
@@ -153,6 +154,33 @@ def _scopri_layer_wms(url_base, parola_chiave, timeout=TIMEOUT_SECONDS):
 
 class BasemapManager:
     """Aggiunge gli sfondi una sola volta per sessione QGIS (non duplica se gia' presenti)."""
+
+    def __init__(self):
+        # Ogni layer aggiunto al progetto (import GPS, GeoPackage, layer a mano...)
+        # finisce in cima: il satellite va poi riportato in fondo.
+        QgsProject.instance().layersAdded.connect(self._pianifica_satellite_in_fondo)
+
+    def _pianifica_satellite_in_fondo(self, _layers=None):
+        # Differito: a layersAdded il nodo del nuovo layer potrebbe non essere ancora nell'albero.
+        from qgis.PyQt.QtCore import QTimer
+        QTimer.singleShot(0, self.satellite_in_fondo)
+
+    def satellite_in_fondo(self):
+        """Sposta il satellite come ultimo nodo dell'albero Livelli (sotto a tutto)."""
+        project = QgsProject.instance()
+        layers = project.mapLayersByName(SATELLITE_NAME) or project.mapLayersByName(SATELLITE_FALLBACK_NAME)
+        if not layers:
+            return
+        radice = project.layerTreeRoot()
+        nodo = radice.findLayer(layers[0].id())
+        if nodo is None or nodo.parent() is not radice:
+            return
+        figli = radice.children()
+        if figli and figli[-1] is nodo:
+            return
+        copia = nodo.clone()
+        radice.insertChildNode(-1, copia)
+        radice.removeChildNode(nodo)
 
     def ensure_default_basemaps(self):
         """
