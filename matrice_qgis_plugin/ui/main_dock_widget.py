@@ -32,6 +32,7 @@ class MainDockWidget(QDockWidget):
         self._cantiere_corrente_id = None  # per sapere a quale cantiere riferire i toggle dei livelli
 
         self._content.errorLabel.setText("")
+        self.set_us_attive_visibile(False)  # Fasi e US attive nascoste all'avvio
         self._content.apriTavolaButton.clicked.connect(self._on_apri_tavola)
         self._content.nuovoCantiereButton.clicked.connect(self.nuovo_cantiere_richiesto.emit)
         self._content.aggiornaCantieriButton.clicked.connect(self.aggiorna_cantieri_richiesto.emit)
@@ -76,6 +77,9 @@ class MainDockWidget(QDockWidget):
         """
         self._content.usAttiveLabel.setVisible(visibile)
         self._content.usAttiveListWidget.setVisible(visibile)
+        # Anche «Fasi del cantiere» si vede solo col Rilievo vettoriale attivo.
+        self._content.fasiLabel.setVisible(visibile)
+        self._content.fasiListWidget.setVisible(visibile)
 
     def populate_us_attive(self, us_rows):
         """
