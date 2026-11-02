@@ -24,7 +24,7 @@ per poter editare una geometria in mappa.
 TIPI_INTERVENTO = [
     ("scavo", "Scavo"),
     ("sorveglianza", "Sorveglianza archeologica"),
-    ("vpa", "Verifica preventiva dell'interesse archeologico (VPA)"),
+    ("vpa", "Verifica preventiva dell'interesse archeologico (VPIA)"),
     ("carotaggi", "Carotaggi"),
     ("progettazione", "Progettazione archeologica"),
     ("museo", "Museo"),

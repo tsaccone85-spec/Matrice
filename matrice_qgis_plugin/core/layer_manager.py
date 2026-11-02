@@ -232,17 +232,17 @@ LAYER_SOURCES = {
         "campi_nascosti": ("id", "cantiere_id", "created_by"),
         "espressione_display": "'Buffer ' || coalesce(to_string(\"distanza_m\"), '')",
     },
-    # ---- VPA (Verifica preventiva): viste 0100_vpa_qgis.sql --------------------
-    # La VPA salva la geometria come WKT testuale; le viste la espongono come
+    # ---- VPIA (Verifica preventiva): viste 0100_vpa_qgis.sql --------------------
+    # La VPIA salva la geometria come WKT testuale; le viste la espongono come
     # geometry PostGIS e riscrivono su vpa_progetto / vpa_sito con trigger
-    # INSTEAD OF. Compaiono solo nei cantieri VPA (`solo_vpa`). Ricognizioni e
+    # INSTEAD OF. Compaiono solo nei cantieri VPIA (`solo_vpa`). Ricognizioni e
     # Unita' di ricognizione riusano i layer survey_ur / survey_ritrovamento
     # della Progettazione (vedi CHIAVI_RICOGNIZIONE_VPA).
     "vpa_progetto": {
         "source": "v_vpa_progetto_qgis",
         "geometry_column": "geom",
         "key_column": "id",
-        "display_name": "VPA - Area di progetto (MOPR)",
+        "display_name": "VPIA - Area di progetto (MOPR)",
         "wkb_type": Qgis.WkbType.MultiPolygon,
         "srid": 4326,
         "solo_vpa": True,
@@ -257,7 +257,7 @@ LAYER_SOURCES = {
         "source": "v_vpa_sito_qgis",
         "geometry_column": "geom",
         "key_column": "id",
-        "display_name": "VPA - Siti (punti)",
+        "display_name": "VPIA - Siti (punti)",
         "wkb_type": Qgis.WkbType.MultiPoint,
         "srid": 4326,
         "filtro_sql": "geometrytype(geom) in ('POINT', 'MULTIPOINT')",
@@ -270,7 +270,7 @@ LAYER_SOURCES = {
         "source": "v_vpa_sito_qgis",
         "geometry_column": "geom",
         "key_column": "id",
-        "display_name": "VPA - Siti (linee)",
+        "display_name": "VPIA - Siti (linee)",
         "wkb_type": Qgis.WkbType.MultiLineString,
         "srid": 4326,
         "filtro_sql": "geometrytype(geom) in ('LINESTRING', 'MULTILINESTRING')",
@@ -283,7 +283,7 @@ LAYER_SOURCES = {
         "source": "v_vpa_sito_qgis",
         "geometry_column": "geom",
         "key_column": "id",
-        "display_name": "VPA - Siti (poligoni)",
+        "display_name": "VPIA - Siti (poligoni)",
         "wkb_type": Qgis.WkbType.MultiPolygon,
         "srid": 4326,
         "filtro_sql": "geometrytype(geom) in ('POLYGON', 'MULTIPOLYGON')",
@@ -318,9 +318,9 @@ RIFERIMENTI_PER_TIPO_INTERVENTO = {
     "carotaggi": ("carotaggio_progettazione",),
     "sorveglianza": ("trincea_progettazione", "saggio_progettazione"),
 }
-# Gruppo «VPA»: i layer propri della Verifica preventiva e, nei cantieri VPA, le
+# Gruppo «VPIA»: i layer propri della Verifica preventiva e, nei cantieri VPIA, le
 # ricognizioni (UR e rinvenimenti) del flusso Progettazione, riusate cosi' come sono.
-GRUPPO_VPA = "VPA"
+GRUPPO_VPA = "VPIA"
 CHIAVI_GRUPPO_VPA = ("vpa_progetto", "vpa_sito_punti", "vpa_sito_linee", "vpa_sito_poligoni")
 CHIAVI_RICOGNIZIONE_VPA = ("survey_ur", "survey_ritrovamento")
 CHIAVI_GRUPPO_PROGETTAZIONE = (
@@ -337,12 +337,12 @@ class LayerManager:
         self._layers_by_cantiere = {}
         self._nome_by_cantiere = {}
         self._riferimenti_by_cantiere = {}  # layer di sola lettura dalla Progettazione di origine
-        self._vpa_cantieri = set()  # cantieri VPA con accesso VPA verificato
+        self._vpa_cantieri = set()  # cantieri VPIA con accesso VPIA verificato
         self._epsg_scavo_by_cantiere = {}  # cantiere_id -> EPSG dei dati di scavo (cantiere.sr_scavo_id)
         self.su_layer_aggiunto = None  # callback(layer, campi_foto) dopo l'aggiunta in mappa (anteprime foto)
 
     def imposta_vpa(self, cantiere_id, abilitato):
-        """Marca il cantiere come VPA abilitato: solo cosi' si caricano i layer `solo_vpa`."""
+        """Marca il cantiere come VPIA abilitato: solo cosi' si caricano i layer `solo_vpa`."""
         if abilitato:
             self._vpa_cantieri.add(cantiere_id)
         else:
@@ -365,7 +365,7 @@ class LayerManager:
         return cantiere_id in self._vpa_cantieri
 
     def chiavi_disponibili(self, cantiere_id):
-        """Chiavi di LAYER_SOURCES caricabili per il cantiere (i layer VPA solo nei cantieri VPA)."""
+        """Chiavi di LAYER_SOURCES caricabili per il cantiere (i layer VPIA solo nei cantieri VPIA)."""
         return [k for k, o in LAYER_SOURCES.items() if not o.get("solo_vpa") or self.e_vpa(cantiere_id)]
 
     def gruppo_di(self, cantiere_id, key):
@@ -564,7 +564,7 @@ class LayerManager:
         return layers, has_data
 
     def _aggiungi_in_mappa(self, layer, key, cantiere_id=None):
-        """Aggiunge `layer` al progetto, nel gruppo "Progettazione" o "VPA" se ne fa parte."""
+        """Aggiunge `layer` al progetto, nel gruppo "Progettazione" o "VPIA" se ne fa parte."""
         nome_gruppo = self.gruppo_di(cantiere_id, key)
         if nome_gruppo is None:
             QgsProject.instance().addMapLayer(layer)

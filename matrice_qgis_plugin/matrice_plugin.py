@@ -678,11 +678,11 @@ class MatricePlugin:
 
     def _vpa_abilitato(self, cantiere_id):
         """
-        True se il cantiere e' di tipo VPA e l'utente loggato puo' usare la VPA.
+        True se il cantiere e' di tipo VPIA e l'utente loggato puo' usare la VPIA.
         Il ruolo del database del plugin non e' soggetto alla RLS: l'accesso si
-        verifica con il token dell'utente, che la RLS (anche la regola «VPA
+        verifica con il token dell'utente, che la RLS (anche la regola «VPIA
         riservata») la subisce. Una riga di vpa_progetto visibile = accesso ok.
-        Mai bloccante: in caso di errore i layer VPA non si caricano.
+        Mai bloccante: in caso di errore i layer VPIA non si caricano.
         """
         try:
             tipo, _stato, _origine = self.matrice_api.get_stato_progettazione(cantiere_id, self.session.access_token)
@@ -697,7 +697,7 @@ class MatricePlugin:
         if not righe:
             self.iface.messageBar().pushInfo(
                 "Matrice",
-                "Livelli VPA non caricati: apri prima la VPA dall'app (o l'accesso alla VPA non e' abilitato).",
+                "Livelli VPIA non caricati: apri prima la VPIA dall'app (o l'accesso alla VPIA non e' abilitato).",
             )
             return False
         return True
@@ -1016,8 +1016,8 @@ class MatricePlugin:
     def _watch_layer_sync(self, key, layer, cantiere_id):
         """Aggancia il layer appena mostrato in mappa al percorso di sincronizzazione giusto (sezione 5)."""
         if key in CHIAVI_GRUPPO_VPA:
-            # Viste VPA con trigger INSTEAD OF: il commit scrive gia' su Matrice,
-            # nessuno storico (us_storico_modifiche non ammette le tabelle VPA).
+            # Viste VPIA con trigger INSTEAD OF: il commit scrive gia' su Matrice,
+            # nessuno storico (us_storico_modifiche non ammette le tabelle VPIA).
             return
         if key in LayerManager.POINT_SYNC_TABLES:
             table_name = LayerManager.POINT_SYNC_TABLES[key]
@@ -1071,7 +1071,7 @@ class MatricePlugin:
                 elif key in ("colonna_stratigrafica", "carotaggio"):
                     self.style_manager.apply_esito_style(layer)
             if key in CHIAVI_LAYER_PROGETTAZIONE or key in CHIAVI_GRUPPO_VPA:
-                # Spuntare un livello Progettazione/VPA apre subito la matita.
+                # Spuntare un livello Progettazione/VPIA apre subito la matita.
                 self.iface.setActiveLayer(layer)
                 if not layer.isEditable():
                     layer.startEditing()
