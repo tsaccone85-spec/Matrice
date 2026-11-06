@@ -101,6 +101,20 @@ LAYER_SOURCES = {
         "campi_foto": ("foto_1_url", "foto_2_url", "foto_3_url"),
         "espressione_display": "'Colonna ' || \"numero_colonna\"",
     },
+    # Forme chiuse disegnate sul foglio di trincea/saggio (migrazione 0152, vista
+    # v_disegno_qgis). Solo cantieri di sorveglianza; il disegno si fa nell'app.
+    "disegno": {
+        "source": "v_disegno_qgis",
+        "geometry_column": "geom",
+        "key_column": "id",
+        "display_name": "Disegno",
+        "wkb_type": Qgis.WkbType.Polygon,
+        "srid": 4326,
+        "campi_nascosti": ("id", "cantiere_id", "created_by", "origine_id", "us_id"),
+        "espressione_display": "coalesce(\"codice\", \"tipo\")",
+        "stile": {"riempimento": "#8d6e63", "contorno": "#5d4037"},
+        "solo_sorveglianza": True,
+    },
     "sezione_prospetto": {
         "source": "v_sezione_prospetto_qgis",
         "geometry_column": "geom",
@@ -321,6 +335,11 @@ RIFERIMENTI_PER_TIPO_INTERVENTO = {
 # Gruppo «VPIA»: i layer propri della Verifica preventiva e, nei cantieri VPIA, le
 # ricognizioni (UR e rinvenimenti) del flusso Progettazione, riusate cosi' come sono.
 GRUPPO_VPA = "VPIA"
+# Gruppo «Sorveglianza archeologica»: nei cantieri di sorveglianza raccoglie le
+# colonne stratigrafiche e il «Disegno» (forme chiuse US/taglio/USM disegnate
+# sul foglio di trincea/saggio). Altrove le colonne restano alla radice.
+GRUPPO_SORVEGLIANZA = "Sorveglianza archeologica"
+CHIAVI_GRUPPO_SORVEGLIANZA = ("colonna_stratigrafica", "disegno")
 CHIAVI_GRUPPO_VPA = ("vpa_progetto", "vpa_sito_punti", "vpa_sito_linee", "vpa_sito_poligoni")
 CHIAVI_RICOGNIZIONE_VPA = ("survey_ur", "survey_ritrovamento")
 CHIAVI_GRUPPO_PROGETTAZIONE = (
@@ -338,6 +357,7 @@ class LayerManager:
         self._nome_by_cantiere = {}
         self._riferimenti_by_cantiere = {}  # layer di sola lettura dalla Progettazione di origine
         self._vpa_cantieri = set()  # cantieri VPIA con accesso VPIA verificato
+        self._sorveglianza_cantieri = set()  # cantieri con tipo_intervento='sorveglianza'
         self._epsg_scavo_by_cantiere = {}  # cantiere_id -> EPSG dei dati di scavo (cantiere.sr_scavo_id)
         self.su_layer_aggiunto = None  # callback(layer, campi_foto) dopo l'aggiunta in mappa (anteprime foto)
 
@@ -347,6 +367,13 @@ class LayerManager:
             self._vpa_cantieri.add(cantiere_id)
         else:
             self._vpa_cantieri.discard(cantiere_id)
+
+    def imposta_sorveglianza(self, cantiere_id, abilitato):
+        """Marca il cantiere come sorveglianza: abilita il layer «Disegno» e il gruppo dedicato."""
+        if abilitato:
+            self._sorveglianza_cantieri.add(cantiere_id)
+        else:
+            self._sorveglianza_cantieri.discard(cantiere_id)
 
     def imposta_sr_scavo(self, cantiere_id, epsg):
         """
@@ -366,7 +393,11 @@ class LayerManager:
 
     def chiavi_disponibili(self, cantiere_id):
         """Chiavi di LAYER_SOURCES caricabili per il cantiere (i layer VPIA solo nei cantieri VPIA)."""
-        return [k for k, o in LAYER_SOURCES.items() if not o.get("solo_vpa") or self.e_vpa(cantiere_id)]
+        return [
+            k for k, o in LAYER_SOURCES.items()
+            if (not o.get("solo_vpa") or self.e_vpa(cantiere_id))
+            and (not o.get("solo_sorveglianza") or cantiere_id in self._sorveglianza_cantieri)
+        ]
 
     def gruppo_di(self, cantiere_id, key):
         """Nome del gruppo del pannello Livelli QGIS in cui sta `key`, o None (radice)."""
@@ -374,6 +405,8 @@ class LayerManager:
             return GRUPPO_VPA
         if key in CHIAVI_GRUPPO_PROGETTAZIONE:
             return GRUPPO_PROGETTAZIONE
+        if key in CHIAVI_GRUPPO_SORVEGLIANZA and cantiere_id in self._sorveglianza_cantieri:
+            return GRUPPO_SORVEGLIANZA
         return None
 
     def nome_cantiere(self, cantiere_id):

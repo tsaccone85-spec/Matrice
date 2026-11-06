@@ -568,6 +568,12 @@ class MatricePlugin:
 
         self.session.cantiere_corrente_id = cantiere_id
         self.layer_manager.imposta_vpa(cantiere_id, self._vpa_abilitato(cantiere_id))
+        # Cantiere di sorveglianza: gruppo «Sorveglianza archeologica» con colonne e «Disegno».
+        try:
+            tipo_int, _st, _og = self.matrice_api.get_stato_progettazione(cantiere_id, self.session.access_token)
+            self.layer_manager.imposta_sorveglianza(cantiere_id, tipo_int == "sorveglianza")
+        except Exception:
+            self.layer_manager.imposta_sorveglianza(cantiere_id, False)
         # Sistema dei dati di scavo confermato nell'app (cantiere.sr_scavo_id):
         # e' il CRS del layer «Rilievo vettoriale». Mai bloccante: se la lettura
         # fallisce o non e' confermato, resta EPSG:4326.
